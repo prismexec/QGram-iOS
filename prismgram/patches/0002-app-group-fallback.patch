@@ -1,0 +1,42 @@
+diff --git a/Swiftgram/SGDBReset/Sources/File.swift b/Swiftgram/SGDBReset/Sources/File.swift
+index 42e66104..a388801a 100644
+--- a/Swiftgram/SGDBReset/Sources/File.swift
++++ b/Swiftgram/SGDBReset/Sources/File.swift
+@@ -7,7 +7,7 @@ private let dbResetKey = "sg_db_reset"
+ private let dbHardResetKey = "sg_db_hard_reset"
+ 
+ private func sgDefaultDataPath() -> String? {
+-    guard let appGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: sgAppGroupIdentifier()) else {
++    guard let appGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: sgAppGroupIdentifier()) ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { // MARK: PrismGram
+         return nil
+     }
+     return (appGroupUrl.path as NSString).appendingPathComponent("telegram-data")
+diff --git a/Swiftgram/SGLogging/Sources/SGLogger.swift b/Swiftgram/SGLogging/Sources/SGLogger.swift
+index a3c8a09b..b0e976a6 100644
+--- a/Swiftgram/SGLogging/Sources/SGLogger.swift
++++ b/Swiftgram/SGLogging/Sources/SGLogger.swift
+@@ -43,7 +43,8 @@ public class SGLogger {
+                 return SGLogger(rootPath: "", basePath: "")
+             }
+             let appGroupName = "group.\(baseAppBundleId)"
+-            let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++            // MARK: PrismGram: fall back to Documents when the App Group is missing
++            let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName) ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+             guard let appGroupUrl = maybeAppGroupUrl else {
+                 print("Can't setup logger (2)!")
+                 return SGLogger(rootPath: "", basePath: "")
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index 31f5fa94..01ba0555 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -547,7 +547,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+         
+         let baseAppBundleId = Bundle.main.bundleIdentifier!
+         let appGroupName = "group.\(baseAppBundleId)"
+-        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
++        // MARK: PrismGram: many re-signing tools drop the App Group entitlement.
++        // Fall back to the app's own Documents folder instead of stopping at a black screen.
++        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName) ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+         
+         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
+         self.buildConfig = buildConfig
