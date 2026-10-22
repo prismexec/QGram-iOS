@@ -1,0 +1,334 @@
+diff --git a/Swiftgram/SGSettingsUI/Sources/SGSettingsController.swift b/Swiftgram/SGSettingsUI/Sources/SGSettingsController.swift
+index 284489f5..50bf5f16 100644
+--- a/Swiftgram/SGSettingsUI/Sources/SGSettingsController.swift
++++ b/Swiftgram/SGSettingsUI/Sources/SGSettingsController.swift
+@@ -29,6 +29,7 @@ private enum SGControllerSection: Int32, SGItemListSection {
+     case search
+     case prismGhost // MARK: PrismGram
+     case prismHistory // MARK: PrismGram
++    case prismOther // MARK: PrismGram
+     case trending
+     case content
+     case tabs
+@@ -56,6 +57,8 @@ private enum SGBoolSetting: String {
+     case prismGhostNoStoryViews
+     case prismSaveDeletedMessages
+     case prismSaveEditHistory
++    case prismGhostReadOnReply
++    case prismHideSponsoredMessages
+     case hidePhoneInSettings
+     case showTabNames
+     case showContactsTab
+@@ -169,11 +172,14 @@ private func SGControllerEntries(presentationData: PresentationData, callListSet
+     entries.append(.toggle(id: id.count, section: .prismGhost, settingName: .prismGhostNoOnline, value: SGSimpleSettings.shared.prismGhostNoOnline, text: prismRu ? "Не отправлять «в сети»" : "Don't send online status", enabled: true))
+     entries.append(.toggle(id: id.count, section: .prismGhost, settingName: .prismGhostNoTyping, value: SGSimpleSettings.shared.prismGhostNoTyping, text: prismRu ? "Не отправлять «печатает»" : "Don't send typing status", enabled: true))
+     entries.append(.toggle(id: id.count, section: .prismGhost, settingName: .prismGhostNoStoryViews, value: SGSimpleSettings.shared.prismGhostNoStoryViews, text: prismRu ? "Не отмечать истории просмотренными" : "Don't mark stories as viewed", enabled: true))
+-    entries.append(.notice(id: id.count, section: .prismGhost, text: prismRu ? "Прочитанные сообщения останутся непрочитанными у собеседника. Статус «в сети» применяется после перезапуска приложения." : "Messages you read stay unread for the sender. Online status changes apply after restarting the app."))
++    entries.append(.toggle(id: id.count, section: .prismGhost, settingName: .prismGhostReadOnReply, value: SGSimpleSettings.shared.prismGhostReadOnReply, text: prismRu ? "Читать при ответе" : "Read on reply", enabled: SGSimpleSettings.shared.prismGhostNoReadReceipts))
++    entries.append(.notice(id: id.count, section: .prismGhost, text: prismRu ? "Прочитанные сообщения останутся непрочитанными у собеседника. «Читать при ответе» — когда вы пишете в чат, он отмечается прочитанным: ответ всё равно это выдаёт. Отправить прочтение вручную: удерживайте чат в списке → «👻 Отправить прочтение». После отправки сообщения PrismGram сразу снова ставит статус «не в сети»." : "Messages you read stay unread for the sender. \"Read on reply\" marks a chat as read when you write to it, since replying reveals it anyway. To send a read receipt manually, long-press a chat in the list → \"👻 Send Read Receipt\". After you send a message PrismGram immediately goes offline again."))
+     entries.append(.header(id: id.count, section: .prismHistory, text: prismRu ? "PRISMGRAM · ИСТОРИЯ СООБЩЕНИЙ" : "PRISMGRAM · MESSAGE HISTORY", badge: nil))
+     entries.append(.toggle(id: id.count, section: .prismHistory, settingName: .prismSaveDeletedMessages, value: SGSimpleSettings.shared.prismSaveDeletedMessages, text: prismRu ? "Сохранять удалённые сообщения" : "Keep deleted messages", enabled: true))
+     entries.append(.toggle(id: id.count, section: .prismHistory, settingName: .prismSaveEditHistory, value: SGSimpleSettings.shared.prismSaveEditHistory, text: prismRu ? "Сохранять историю правок" : "Keep edit history", enabled: true))
+     entries.append(.notice(id: id.count, section: .prismHistory, text: prismRu ? "Удалённые сообщения остаются в чате с меткой 🗑. Предыдущие версии изменённых сообщений — в меню сообщения → «История правок». Работает только для сообщений, которые уже были загружены на устройство." : "Deleted messages stay in the chat marked with 🗑. Previous versions of edited messages are in the message menu → Edit History. Works only for messages already loaded on this device."))
++    entries.append(.header(id: id.count, section: .prismOther, text: prismRu ? "PRISMGRAM · ДРУГОЕ" : "PRISMGRAM · OTHER", badge: nil))
++    entries.append(.toggle(id: id.count, section: .prismOther, settingName: .prismHideSponsoredMessages, value: SGSimpleSettings.shared.prismHideSponsoredMessages, text: prismRu ? "Скрывать рекламу в каналах" : "Hide sponsored messages", enabled: true))
+     
+     
+     if SGSimpleSettings.shared.canUseNY {
+@@ -408,6 +414,10 @@ public func sgSettingsController(context: AccountContext/*, focusOnItemTag: Int?
+             SGSimpleSettings.shared.prismSaveDeletedMessages = value
+         case .prismSaveEditHistory:
+             SGSimpleSettings.shared.prismSaveEditHistory = value
++        case .prismGhostReadOnReply:
++            SGSimpleSettings.shared.prismGhostReadOnReply = value
++        case .prismHideSponsoredMessages:
++            SGSimpleSettings.shared.prismHideSponsoredMessages = value
+         case .hidePhoneInSettings:
+             SGSimpleSettings.shared.hidePhoneInSettings = value
+             askForRestart?()
+diff --git a/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift b/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift
+index 1f36f3aa..6b0a5c21 100644
+--- a/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift
++++ b/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift
+@@ -183,6 +183,8 @@ public class SGSimpleSettings {
+         case prismGhostNoStoryViews
+         case prismSaveDeletedMessages
+         case prismSaveEditHistory
++        case prismGhostReadOnReply
++        case prismHideSponsoredMessages
+     }
+     
+     public enum DownloadSpeedBoostValues: String, CaseIterable {
+@@ -342,7 +344,9 @@ public class SGSimpleSettings {
+         Keys.prismGhostNoTyping.rawValue: false,
+         Keys.prismGhostNoStoryViews.rawValue: false,
+         Keys.prismSaveDeletedMessages.rawValue: true,
+-        Keys.prismSaveEditHistory.rawValue: true
++        Keys.prismSaveEditHistory.rawValue: true,
++        Keys.prismGhostReadOnReply.rawValue: true,
++        Keys.prismHideSponsoredMessages.rawValue: false
+     ]
+     
+     public static let groupDefaultValues: [String: Any] = [
+@@ -625,6 +629,12 @@ public class SGSimpleSettings {
+ 
+     @UserDefault(key: Keys.prismSaveEditHistory.rawValue)
+     public var prismSaveEditHistory: Bool
++
++    @UserDefault(key: Keys.prismGhostReadOnReply.rawValue)
++    public var prismGhostReadOnReply: Bool
++
++    @UserDefault(key: Keys.prismHideSponsoredMessages.rawValue)
++    public var prismHideSponsoredMessages: Bool
+ }
+ 
+ // MARK: PrismGram
+diff --git a/submodules/ChatListUI/Sources/ChatContextMenus.swift b/submodules/ChatListUI/Sources/ChatContextMenus.swift
+index 50025717..a2701888 100644
+--- a/submodules/ChatListUI/Sources/ChatContextMenus.swift
++++ b/submodules/ChatListUI/Sources/ChatContextMenus.swift
+@@ -2,6 +2,7 @@ import Foundation
+ import UIKit
+ import SwiftSignalKit
+ import ContextUI
++import SGSimpleSettings
+ import AccountContext
+ import TelegramCore
+ import Display
+@@ -379,6 +380,16 @@ func chatContextMenuItems(context: AccountContext, peerId: EnginePeer.Id, promoI
+                                     })))
+                                 }
+                             }
++                            
++                            // MARK: PrismGram: ghost mode hides read receipts; let the user send one on purpose
++                            if SGSimpleSettings.shared.prismGhostNoReadReceipts && peerId != context.account.peerId && !isForum {
++                                let prismIsRussian = strings.baseLanguageCode.hasPrefix("ru") || strings.baseLanguageCode.hasPrefix("uk")
++                                items.append(.action(ContextMenuActionItem(text: prismIsRussian ? "👻 Отправить прочтение" : "👻 Send Read Receipt", icon: { theme in generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/MarkAsRead"), color: theme.contextMenu.primaryColor) }, action: { _, f in
++                                    let markLocally: Signal<Never, NoError> = isUnread ? context.engine.messages.togglePeersUnreadMarkInteractively(peerIds: [peerId], setToValue: nil) : .complete()
++                                    let _ = (markLocally |> then(context.engine.prismSendReadReceipt(peerId: peerId))).startStandalone()
++                                    f(.default)
++                                })))
++                            }
+                         }
+                         
+                         let archiveEnabled = !isSavedMessages && peerId != EnginePeer.Id(namespace: Namespaces.Peer.CloudUser, id: EnginePeer.Id.Id._internalFromInt64Value(777000)) /* && peerId == context.account.peerId // MARK: Swiftgram */
+diff --git a/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift b/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
+index 8adb1425..4a86d643 100644
+--- a/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
++++ b/submodules/TelegramCore/Sources/PendingMessages/EnqueueMessage.swift
+@@ -570,6 +570,10 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox:
+ }
+ 
+ public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
++    // MARK: PrismGram
++    if !messages.isEmpty && peerId != account.peerId {
++        prismReadOnReplyIfNeeded(account: account, peerId: peerId)
++    }
+     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
+     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
+         signal = opportunisticallyTransformOutgoingMedia(network: account.network, postbox: account.postbox, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messages: messages, userInteractive: true)
+diff --git a/submodules/TelegramCore/Sources/PrismGram/PrismGramGhostActions.swift b/submodules/TelegramCore/Sources/PrismGram/PrismGramGhostActions.swift
+new file mode 100644
+index 00000000..35653f9f
+--- /dev/null
++++ b/submodules/TelegramCore/Sources/PrismGram/PrismGramGhostActions.swift
+@@ -0,0 +1,94 @@
++// MARK: PrismGram
++import Foundation
++import Postbox
++import SwiftSignalKit
++import TelegramApi
++import SGSimpleSettings
++
++/// Tells the server that everything currently read locally in `peerId` is read,
++/// even while ghost mode hides read receipts.
++func prismSendReadReceipt(account: Account, peerId: PeerId) -> Signal<Never, NoError> {
++    let network = account.network
++    let stateManager = account.stateManager
++    return account.postbox.transaction { transaction -> (Peer?, Int32?) in
++        guard let peer = transaction.getPeer(peerId) else {
++            return (nil, nil)
++        }
++        var maxIncomingReadId: Int32?
++        if let states = transaction.getPeerReadStates(peerId) {
++            for (namespace, state) in states where namespace == Namespaces.Message.Cloud {
++                if case let .idBased(maxId, _, _, _, _) = state {
++                    maxIncomingReadId = maxId
++                }
++            }
++        }
++        return (peer, maxIncomingReadId)
++    }
++    |> mapToSignal { peer, maxIncomingReadId -> Signal<Never, NoError> in
++        guard let peer = peer, let maxIncomingReadId = maxIncomingReadId, maxIncomingReadId > 0 else {
++            return .complete()
++        }
++        if peer.id.namespace == Namespaces.Peer.CloudChannel {
++            guard let inputChannel = apiInputChannel(peer) else {
++                return .complete()
++            }
++            return network.request(Api.functions.channels.readHistory(channel: inputChannel, maxId: maxIncomingReadId))
++            |> `catch` { _ -> Signal<Api.Bool, NoError> in
++                return .complete()
++            }
++            |> ignoreValues
++        } else if peer.id.namespace == Namespaces.Peer.CloudUser || peer.id.namespace == Namespaces.Peer.CloudGroup {
++            guard let inputPeer = apiInputPeer(peer) else {
++                return .complete()
++            }
++            return network.request(Api.functions.messages.readHistory(peer: inputPeer, maxId: maxIncomingReadId))
++            |> map(Optional.init)
++            |> `catch` { _ -> Signal<Api.messages.AffectedMessages?, NoError> in
++                return .single(nil)
++            }
++            |> mapToSignal { result -> Signal<Never, NoError> in
++                if let result = result {
++                    switch result {
++                    case let .affectedMessages(affectedMessagesData):
++                        stateManager?.addUpdateGroups([.updatePts(pts: affectedMessagesData.pts, ptsCount: affectedMessagesData.ptsCount)])
++                    }
++                }
++                return .complete()
++            }
++        } else {
++            return .complete()
++        }
++    }
++}
++
++/// Ghost mode + "read on reply": writing to a chat reveals that you read it anyway.
++func prismReadOnReplyIfNeeded(account: Account, peerId: PeerId) {
++    guard prismGhostNoReadReceipts() && SGSimpleSettings.shared.prismGhostReadOnReply else {
++        return
++    }
++    let _ = prismSendReadReceipt(account: account, peerId: peerId).start()
++}
++
++/// The server marks you online when you send a message. In ghost mode go back offline right away.
++func prismGoOfflineAfterSendingIfNeeded(network: Network) {
++    guard prismGhostNoOnline() else {
++        return
++    }
++    let _ = (network.request(Api.functions.account.updateStatus(offline: .boolTrue))
++    |> `catch` { _ -> Signal<Api.Bool, NoError> in
++        return .single(.boolFalse)
++    }).start()
++}
++
++public extension TelegramEngine {
++    /// Sends a read receipt for `peerId` even while ghost mode is on.
++    func prismSendReadReceipt(peerId: EnginePeer.Id) -> Signal<Never, NoError> {
++        return PrismGramCore.sendReadReceipt(account: self.account, peerId: peerId)
++    }
++}
++
++enum PrismGramCore {
++    static func sendReadReceipt(account: Account, peerId: PeerId) -> Signal<Never, NoError> {
++        return prismSendReadReceipt(account: account, peerId: peerId)
++    }
++}
+diff --git a/submodules/TelegramCore/Sources/PrismGram/PrismGramMessageAttributes.swift b/submodules/TelegramCore/Sources/PrismGram/PrismGramMessageAttributes.swift
+index ab439142..1fbb2b81 100644
+--- a/submodules/TelegramCore/Sources/PrismGram/PrismGramMessageAttributes.swift
++++ b/submodules/TelegramCore/Sources/PrismGram/PrismGramMessageAttributes.swift
+@@ -129,6 +129,11 @@ func prismKeepDeletedMessages(transaction: Transaction, ids: [MessageId]) -> [Me
+             remaining.append(id)
+             continue
+         }
++        // Self-destructing and view-once messages are meant to disappear.
++        if message.attributes.contains(where: { $0 is AutoremoveTimeoutMessageAttribute || $0 is AutoclearTimeoutMessageAttribute }) {
++            remaining.append(id)
++            continue
++        }
+         transaction.updateMessage(id, update: { currentMessage in
+             var storeForwardInfo: StoreMessageForwardInfo?
+             if let forwardInfo = currentMessage.forwardInfo {
+@@ -158,3 +163,18 @@ func prismGhostNoTyping() -> Bool {
+ func prismGhostNoStoryViews() -> Bool {
+     return SGSimpleSettings.shared.prismGhostNoStoryViews
+ }
++
++/// Keeps PrismGram attributes when a message is overwritten by a fresh server copy
++/// (history refetch, channel validation, any full update).
++func prismMergeMessageAttributes(_ previous: [MessageAttribute], _ updated: inout [MessageAttribute]) {
++    if !updated.contains(where: { $0 is PrismEditHistoryMessageAttribute }), let history = previous.first(where: { $0 is PrismEditHistoryMessageAttribute }) {
++        updated.append(history)
++    }
++    if !updated.contains(where: { $0 is PrismDeletedMessageAttribute }), let deleted = previous.first(where: { $0 is PrismDeletedMessageAttribute }) {
++        updated.append(deleted)
++    }
++}
++
++func prismHideSponsoredMessages() -> Bool {
++    return SGSimpleSettings.shared.prismHideSponsoredMessages
++}
+diff --git a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
+index bff82167..f5a45305 100644
+--- a/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
++++ b/submodules/TelegramCore/Sources/State/HistoryViewStateValidation.swift
+@@ -894,7 +894,8 @@ private func validateBatch(postbox: Postbox, network: Network, transaction: Tran
+                                             if currentMessage.localTags.contains(.OutgoingLiveLocation) {
+                                                 updatedLocalTags.insert(.OutgoingLiveLocation)
+                                             }
+-                                            return .update(message.withUpdatedLocalTags(updatedLocalTags))
++                                            // MARK: PrismGram: remember the text before this edit
++                                            return .update(message.withUpdatedLocalTags(updatedLocalTags).withUpdatedAttributes(prismAttributesPreservingEditHistory(previousMessage: currentMessage, updatedText: message.text, updatedAttributes: message.attributes)))
+                                         } else {
+                                             var storeForwardInfo: StoreMessageForwardInfo?
+                                             if let forwardInfo = currentMessage.forwardInfo {
+diff --git a/submodules/TelegramCore/Sources/State/PendingMessageManager.swift b/submodules/TelegramCore/Sources/State/PendingMessageManager.swift
+index 3530888b..e61c62eb 100644
+--- a/submodules/TelegramCore/Sources/State/PendingMessageManager.swift
++++ b/submodules/TelegramCore/Sources/State/PendingMessageManager.swift
+@@ -2296,6 +2296,7 @@ public final class PendingMessageManager {
+     }
+     
+     private func applySentMessage(postbox: Postbox, stateManager: AccountStateManager, message: Message, content: PendingMessageUploadedContentAndReuploadInfo, result: Api.Updates) -> Signal<Void, NoError> {
++        prismGoOfflineAfterSendingIfNeeded(network: self.network) // MARK: PrismGram
+         if let _ = message.peers[message.id.peerId] as? TelegramChannel {
+             for attribute in message.attributes {
+                 if let attribute = attribute as? PaidStarsMessageAttribute {
+@@ -2360,6 +2361,7 @@ public final class PendingMessageManager {
+     }
+     
+     private func applySentGroupMessages(postbox: Postbox, stateManager: AccountStateManager, messages: [Message], result: Api.Updates) -> Signal<Void, NoError> {
++        prismGoOfflineAfterSendingIfNeeded(network: self.network) // MARK: PrismGram
+         var namespace = Namespaces.Message.Cloud
+         if let message = messages.first {
+             if let channel = message.peers[message.id.peerId] as? TelegramChannel, channel.isMonoForum {
+diff --git a/submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift b/submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift
+index 5610fbbd..3e6b85e3 100644
+--- a/submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift
++++ b/submodules/TelegramCore/Sources/SyncCore/SyncCore_StandaloneAccountTransaction.swift
+@@ -117,6 +117,8 @@ public let telegramPostboxSeedConfiguration: SeedConfiguration = {
+             if previous.isEmpty {
+                 return
+             }
++            // MARK: PrismGram
++            prismMergeMessageAttributes(previous, &updated)
+             var audioTranscription: AudioTranscriptionMessageAttribute?
+             for attribute in previous {
+                 if let attribute = attribute as? AudioTranscriptionMessageAttribute {
+diff --git a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+index 8c48207f..005235bf 100644
+--- a/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
++++ b/submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.swift
+@@ -454,7 +454,7 @@ private class AdMessagesHistoryContextImpl {
+         if messageId == nil {
+             self.state.set(CachedState.getCached(postbox: account.postbox, peerId: peerId)
+             |> mapToSignal { cachedState -> Signal<State, NoError> in
+-                if let cachedState = cachedState, cachedState.timestamp >= Int32(Date().timeIntervalSince1970) - 5 * 60 {
++                if let cachedState = cachedState, cachedState.timestamp >= Int32(Date().timeIntervalSince1970) - 5 * 60, !prismHideSponsoredMessages() /* MARK: PrismGram */ {
+                     return account.postbox.transaction { transaction -> State in
+                         return State(interPostInterval: cachedState.interPostInterval, messages: cachedState.messages.compactMap { message -> Message? in
+                             return message.toMessage(peerId: peerId, transaction: transaction)
+@@ -491,7 +491,8 @@ private class AdMessagesHistoryContextImpl {
+             return transaction.getPeer(peerId).flatMap(apiInputPeer)
+         }
+         |> mapToSignal { inputPeer -> Signal<(interPostInterval: Int32?, startDelay: Int32?, betweenDelay: Int32?, messages: [Message]), NoError> in
+-            guard let inputPeer else {
++            // MARK: PrismGram: hide sponsored messages
++            guard let inputPeer, !prismHideSponsoredMessages() else {
+                 return .single((nil, nil, nil, []))
+             }
+             var flags: Int32 = 0
