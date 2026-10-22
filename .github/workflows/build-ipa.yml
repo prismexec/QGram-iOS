@@ -84,6 +84,12 @@ jobs:
             if [ "$x" != "$XCODE" ] && [ ! -L "$x" ]; then sudo rm -rf "$x" & fi
           done
           wait
+          # Some third-party build scripts (dav1d) hardcode /Applications/Xcode.app.
+          sudo rm -rf /Applications/Xcode.app
+          sudo ln -s "$XCODE" /Applications/Xcode.app
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          ls -la /Applications/Xcode.app
+          ls /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/
           df -h /
 
       - name: Write build configuration
