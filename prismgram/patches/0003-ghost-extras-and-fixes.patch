@@ -360,3 +360,26 @@ index 8c48207f..005235bf 100644
                  return .single((nil, nil, nil, []))
              }
              var flags: Int32 = 0
+diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+index 9932a692..91d7c02b 100644
+--- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
++++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
+@@ -1580,6 +1580,18 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+             sgActions.append(showJsonAction)
+         }
+         
++        // MARK: PrismGram: send a read receipt on purpose while ghost mode hides them
++        if SGSimpleSettings.shared.prismGhostNoReadReceipts && message.flags.contains(.Incoming) && message.id.peerId != context.account.peerId && message.id.namespace == Namespaces.Message.Cloud {
++            let prismReadIsRussian = chatPresentationInterfaceState.strings.baseLanguageCode.hasPrefix("ru") || chatPresentationInterfaceState.strings.baseLanguageCode.hasPrefix("uk")
++            let prismPeerId = message.id.peerId
++            actions.append(.action(ContextMenuActionItem(text: prismReadIsRussian ? "👻 Отправить прочтение" : "👻 Send Read Receipt", icon: { theme in
++                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/MarkAsRead"), color: theme.actionSheet.primaryTextColor)
++            }, action: { _, f in
++                let _ = context.engine.prismSendReadReceipt(peerId: prismPeerId).startStandalone()
++                f(.default)
++            })))
++        }
++        
+         // MARK: PrismGram: edit history
+         let prismEditHistory = message.prismEditHistory
+         if !prismEditHistory.isEmpty {
