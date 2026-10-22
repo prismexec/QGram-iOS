@@ -109,6 +109,10 @@ jobs:
           cfg = json.load(open("build-system/appstore-configuration.json"))
           # Bundle id and team must match build-system/fake-codesigning profiles.
           cfg["sg_config"] = ""
+          # Re-signing with a personal .p12 (Feather, ESign, Sideloadly) gives a profile
+          # without iCloud / Siri. CloudKit then crashes the app at launch, so turn both off.
+          cfg["enable_icloud"] = False
+          cfg["enable_siri"] = False
           if os.environ.get("TG_API_ID") and os.environ.get("TG_API_HASH"):
               cfg["api_id"] = os.environ["TG_API_ID"]
               cfg["api_hash"] = os.environ["TG_API_HASH"]
