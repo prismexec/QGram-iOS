@@ -54,7 +54,20 @@ Workflow запускается сам при пуше в `main` или ветк
 
 - Раннер `macos-26`, Xcode 26.2 (берётся из `versions.json` Swiftgram).
 - Первая сборка идёт долго (2–5 часов). Кэш Bazel сохраняется, следующие сборки быстрее.
-- Готовый файл: вкладка запуска → **Artifacts → PrismGram-ipa**.
+- Сначала быстрая проверка на Linux (патчи накладываются, синтаксис Swift в порядке), потом сама сборка.
+- Готовый файл публикуется в **Releases**. Постоянная ссылка на последнюю версию:
+  `https://github.com/prismexec/QGram-iOS/releases/latest/download/PrismGram.ipa`
+  (дублируется в Artifacts → PrismGram-ipa).
+
+### Источник для Feather / AltStore
+
+Добавьте в Feather (Sources → +) ссылку:
+
+```
+https://github.com/prismexec/QGram-iOS/releases/latest/download/source.json
+```
+
+Feather будет сам показывать новые сборки PrismGram.
 
 ### Секреты (окружение `P`: Settings → Environments → P)
 

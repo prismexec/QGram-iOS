@@ -49,6 +49,8 @@ jobs:
   build:
     needs: check
     runs-on: macos-26
+    permissions:
+      contents: write
     timeout-minutes: 355
     # TG_API_ID / TG_API_HASH are stored as secrets of the "P" environment.
     environment: P
@@ -165,6 +167,8 @@ jobs:
           cd "$SRC_DIR"
           BUILD_NUMBER=$(( $(cat build_number_offset) + ${{ github.run_number }} ))
           echo "Build number $BUILD_NUMBER"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')" >> "$GITHUB_ENV"
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
           python3 -u build-system/Make/Make.py \
             --overrideXcodeVersion \
@@ -193,3 +197,63 @@ jobs:
           name: PrismGram-ipa
           path: out/PrismGram.ipa
           retention-days: 30
+
+      - name: Make Feather / AltStore source
+        run: |
+          python3 - <<'EOF'
+          import json, os, datetime
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = "build-" + os.environ["BUILD_NUMBER"]
+          base = "https://github.com/%s/releases" % repo
+          size = os.path.getsize("out/PrismGram.ipa")
+          date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+          version = {
+              "version": os.environ["APP_VERSION"],
+              "buildVersion": os.environ["BUILD_NUMBER"],
+              "date": date,
+              "downloadURL": "%s/download/%s/PrismGram.ipa" % (base, tag),
+              "size": size,
+              "localizedDescription": "PrismGram build %s" % os.environ["BUILD_NUMBER"],
+              "minOSVersion": "13.0",
+          }
+          source = {
+              "name": "PrismGram",
+              "identifier": "io.github.%s.prismgram" % repo.split("/")[0].lower(),
+              "sourceURL": "%s/latest/download/source.json" % base,
+              "iconURL": "%s/latest/download/icon.png" % base,
+              "apps": [{
+                  "name": "PrismGram",
+                  "bundleIdentifier": "ph.telegra.Telegraph",
+                  "developerName": repo.split("/")[0],
+                  "subtitle": "Telegram with ghost mode and saved deleted messages",
+                  "localizedDescription": "Swiftgram-based Telegram client with AyuGram-style features: ghost mode, saved deleted messages, edit history.",
+                  "iconURL": "%s/latest/download/icon.png" % base,
+                  "tintColor": "7B2FF7",
+                  "version": version["version"],
+                  "versionDate": date,
+                  "downloadURL": version["downloadURL"],
+                  "size": size,
+                  "versions": [version],
+              }],
+              "news": [],
+          }
+          json.dump(source, open("out/source.json", "w"), indent=2)
+          EOF
+          cp prismgram/branding/icon.png out/icon.png
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ env.BUILD_NUMBER }}
+          target_commitish: ${{ github.sha }}
+          name: PrismGram ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
+          make_latest: "true"
+          body: |
+            PrismGram ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }}), branch `${{ github.ref_name }}`.
+
+            Install with Feather / ESign / Sideloadly / AltStore (re-signs the IPA).
+            Feather source: https://github.com/${{ github.repository }}/releases/latest/download/source.json
+          files: |
+            out/PrismGram.ipa
+            out/source.json
+            out/icon.png
