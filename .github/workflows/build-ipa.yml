@@ -1,106 +1,154 @@
-name: Build QGram unsigned IPA
+name: Build PrismGram IPA
 
-# Ручной запуск из вкладки Actions на GitHub (кнопка "Run workflow").
-# Требуется runner "macos-latest" (GitHub предоставляет его бесплатно с лимитом минут
-# для приватных репо, для публичных — без лимита, но macOS-минуты в 10 раз "дороже"
-# обычных в подсчёте квоты).
+# PrismGram = Swiftgram (open-source Telegram iOS fork) + AyuGram-style features.
+# The workflow downloads Swiftgram at the commit pinned in prismgram/upstream.json,
+# applies prismgram/patches + branding, and builds an unsigned (fake-signed) IPA.
+# Install the IPA with Sideloadly / AltStore / TrollStore, which re-sign it.
+
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "claude/**" ]
+    paths:
+      - "prismgram/**"
+      - ".github/workflows/build-ipa.yml"
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: macos-14   # Apple Silicon runner; Telegram-iOS требует свежий Xcode (см. versions.json репозитория)
-    timeout-minutes: 360  # сборка Telegram-iOS через Bazel занимает 1.5-3 часа на чистом кеше
+    runs-on: macos-26
+    timeout-minutes: 355
+
+    env:
+      SRC_DIR: /Users/Shared/prismgram-src
+      BAZEL_CACHE_DIR: /Users/runner/bazel-cache
 
     steps:
-      - name: Checkout QGram-iOS (форк Telegram-iOS)
+      - name: Checkout PrismGram kit
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 1
 
-      - name: Select Xcode version
+      - name: Read upstream pin
+        id: upstream
         run: |
-          # Версия должна совпадать с той, что указана в build-system/Make/versions.json форка.
-          # Проверь актуальную версию перед запуском: cat versions.json
-          sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          echo "repo=$(python3 -c 'import json;print(json.load(open("prismgram/upstream.json"))["repository"])')" >> "$GITHUB_OUTPUT"
+          echo "commit=$(python3 -c 'import json;print(json.load(open("prismgram/upstream.json"))["commit"])')" >> "$GITHUB_OUTPUT"
+
+      - name: Free disk space
+        run: |
+          df -h /
+          # Other Xcode versions and SDKs we don't need take tens of GB.
+          sudo rm -rf ~/Library/Android /usr/local/share/dotnet /usr/local/lib/node_modules ~/.dotnet || true
+          df -h /
+
+      - name: Fetch Swiftgram sources
+        run: |
+          set -e
+          sudo mkdir -p "$SRC_DIR"
+          sudo chown "$(whoami)" "$SRC_DIR"
+          cd "$SRC_DIR"
+          git init -q
+          git remote add origin "${{ steps.upstream.outputs.repo }}"
+          git fetch -q --depth 1 origin "${{ steps.upstream.outputs.commit }}"
+          git checkout -q FETCH_HEAD
+          git submodule update --init --recursive --depth 1 --jobs 8 \
+            || git submodule update --init --recursive --jobs 8
+          git log -1 --format='Swiftgram %H (%ci) %s'
+
+      - name: Apply PrismGram patches and branding
+        run: python3 "$GITHUB_WORKSPACE/prismgram/apply_prismgram.py" "$SRC_DIR"
+
+      - name: Select Xcode
+        run: |
+          set -e
+          cd "$SRC_DIR"
+          WANTED=$(python3 -c 'import json;print(json.load(open("versions.json"))["xcode"])')
+          echo "Swiftgram wants Xcode $WANTED"
+          ls -d /Applications/Xcode*.app || true
+          if [ -d "/Applications/Xcode_$WANTED.app" ]; then
+            XCODE="/Applications/Xcode_$WANTED.app"
+          else
+            MAJOR="${WANTED%%.*}"
+            XCODE=$(ls -d /Applications/Xcode_${MAJOR}*.app 2>/dev/null | grep -v -i beta | sort -V | tail -1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode $WANTED on this runner"
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
+          # Remove the other Xcodes to free disk space for the Bazel build.
+          for x in /Applications/Xcode*.app; do
+            if [ "$x" != "$XCODE" ] && [ ! -L "$x" ]; then sudo rm -rf "$x" & fi
+          done
+          wait
+          df -h /
 
-      - name: Install Python deps
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r build-system/Make/requirements.txt || true
-
-      - name: Restore Bazel cache
-        uses: actions/cache@v4
-        with:
-          path: ~/telegram-bazel-cache
-          key: bazel-cache-${{ runner.os }}-${{ hashFiles('versions.json') }}
-          restore-keys: |
-            bazel-cache-${{ runner.os }}-
-
-      - name: Write build configuration (без кодсайнинга — для симулятора/дженерик архива)
+      - name: Write build configuration
         env:
-          API_ID: ${{ secrets.TG_API_ID }}
-          API_HASH: ${{ secrets.TG_API_HASH }}
-          BUNDLE_ID: ${{ secrets.QGRAM_BUNDLE_ID }}
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
         run: |
-          cat > build-system/qgram_configuration.json <<EOF
-          {
-            "bundle_id": "${BUNDLE_ID}",
-            "api_id": "${API_ID}",
-            "api_hash": "${API_HASH}",
-            "team_id": "${{ secrets.APPLE_TEAM_ID }}",
-            "app_center_id": "0",
-            "is_internal_build": "true",
-            "is_appstore_build": "false",
-            "appstore_id": "0",
-            "app_specific_url_scheme": "qgram",
-            "premium_iap_product_id": "",
-            "enable_siri": false,
-            "enable_icloud": false
-          }
+          set -e
+          cd "$SRC_DIR"
+          if [ -z "$TG_API_ID" ] || [ -z "$TG_API_HASH" ]; then
+            echo "::warning::TG_API_ID / TG_API_HASH secrets are not set. Using the default credentials from Swiftgram's appstore configuration. Get your own at https://my.telegram.org/apps and add them as repository secrets."
+          fi
+          python3 - <<'EOF'
+          import json, os
+          cfg = json.load(open("build-system/appstore-configuration.json"))
+          # Bundle id and team must match build-system/fake-codesigning profiles.
+          cfg["sg_config"] = ""
+          if os.environ.get("TG_API_ID") and os.environ.get("TG_API_HASH"):
+              cfg["api_id"] = os.environ["TG_API_ID"]
+              cfg["api_hash"] = os.environ["TG_API_HASH"]
+          json.dump(cfg, open("build-system/prismgram-configuration.json", "w"), indent=2)
+          print("bundle_id:", cfg["bundle_id"], "api_id set:", bool(cfg["api_id"]))
           EOF
 
-      - name: Decode signing certificate & provisioning profile
-        env:
-          CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
-          PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
-        run: |
-          mkdir -p build-system/codesigning/certs/development
-          mkdir -p build-system/codesigning/profiles/development
-          echo "$CERT_P12_BASE64" | base64 --decode > build-system/codesigning/certs/development/cert.p12
-          echo "$PROFILE_BASE64" | base64 --decode > build-system/codesigning/profiles/development/Telegram.mobileprovision
+      - name: Restore Bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.BAZEL_CACHE_DIR }}
+          key: bazel-${{ steps.upstream.outputs.commit }}-${{ hashFiles('prismgram/patches/**') }}
+          restore-keys: |
+            bazel-${{ steps.upstream.outputs.commit }}-
+            bazel-
 
-      - name: Generate Xcode project (Bazel)
+      - name: Build PrismGram (release_arm64)
+        id: build
         run: |
-          python3 build-system/Make/Make.py \
-            --cacheDir="$HOME/telegram-bazel-cache" \
-            generateProject \
-            --configurationPath=build-system/qgram_configuration.json \
-            --codesigningInformationPath=build-system/codesigning
-
-      - name: Build IPA (release_arm64)
-        run: |
-          python3 build-system/Make/Make.py \
-            --cacheDir="$HOME/telegram-bazel-cache" \
+          set -e
+          cd "$SRC_DIR"
+          BUILD_NUMBER=$(( $(cat build_number_offset) + ${{ github.run_number }} ))
+          echo "Build number $BUILD_NUMBER"
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py \
+            --overrideXcodeVersion \
+            --cacheDir="$BAZEL_CACHE_DIR" \
             build \
-            --configurationPath=build-system/qgram_configuration.json \
-            --codesigningInformationPath=build-system/codesigning \
-            --buildNumber=${{ github.run_number }} \
-            --configuration=release_arm64
+            --continueOnError \
+            --configurationPath=build-system/prismgram-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber="$BUILD_NUMBER" \
+            --outputBuildArtifactsPath="$SRC_DIR/build/artifacts"
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp build/artifacts/Swiftgram.ipa "$GITHUB_WORKSPACE/out/PrismGram.ipa"
+          ls -la "$GITHUB_WORKSPACE/out"
 
-      - name: Locate build output
-        run: |
-          find . -iname "*.ipa" -maxdepth 6
+      - name: Save Bazel cache
+        if: always() && steps.build.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.BAZEL_CACHE_DIR }}
+          key: bazel-${{ steps.upstream.outputs.commit }}-${{ hashFiles('prismgram/patches/**') }}-${{ github.run_id }}
 
-      - name: Upload IPA artifact
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: QGram-ipa
-          path: |
-            **/*.ipa
-          retention-days: 14
+          name: PrismGram-ipa
+          path: out/PrismGram.ipa
+          retention-days: 30

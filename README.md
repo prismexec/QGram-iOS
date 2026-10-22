@@ -1,140 +1,90 @@
-# QGram (форк Telegram-iOS) — план сборки и фичи «чтение удалённых сообщений»
+# PrismGram для iOS
 
-## 0. Реальность, которую нужно понимать заранее
+PrismGram — клиент Telegram для iPhone с функциями в духе AyuGram.
+Он собирается из [Swiftgram](https://github.com/Swiftgram/Telegram-iOS) (открытый форк
+официального Telegram-iOS, сейчас на базе Telegram 12.9.2), поверх которого накладываются
+патчи PrismGram.
 
-- Это не «фотка» и не 5-минутная задача. Telegram-iOS — открытый проект на ~1M+ строк
-  Swift/Objective-C/C++, собирается **Bazel + Xcode**, **только на macOS**.
-  Источник: [github.com/TelegramMessenger/Telegram-iOS](https://github.com/TelegramMessenger/Telegram-iOS).
-- GitHub Actions даёт `macos-14` runner — на нём можно собрать, но сборка занимает
-  1.5–3 часа (первый прогон без кеша — дольше) и жрёт macOS-минуты по повышенному тарифу.
-- Чтобы получить **установленный** IPA на реальный iPhone (не симулятор), нужен:
-  - платный Apple Developer аккаунт (Team ID),
-  - `api_id` / `api_hash` с [my.telegram.org/apps](https://my.telegram.org/apps),
-  - сертификат подписи (.p12) и provisioning profile (.mobileprovision) — без них
-    workflow соберёт **unsigned** артефакт, который на живом устройстве не запустится
-    без sideload-инструмента (AltStore/Sideloadly) или jailbreak.
-- По правилам самого Telegram (см. README апстрима): переименовывать форк — можно и нужно,
-  **запрещено** только использовать имя «Telegram» как имя твоего приложения и их
-  фирменный логотип (белый самолётик в синем круге). Это я учёл в скрипте ниже.
+В репозитории нет копии исходников Telegram (это ~30 000 файлов). Вместо этого здесь лежит
+«набор сборки»: workflow сам скачивает Swiftgram на зафиксированном коммите, накладывает
+патчи и собирает IPA.
 
-## 1. Что уже сделано в этом комплекте
+## Функции
 
-| Файл | Назначение |
+Всё, что уже есть в Swiftgram (скрытие историй, ID и дата регистрации в профиле, переводчик,
+настройка контекстного меню, компактный список чатов и т.д.), плюс функции PrismGram:
+
+| Функция | Что делает |
 |---|---|
-| [rebrand_to_qgram.py](rebrand_to_qgram.py) | Скрипт переименования Telegram → QGram в пользовательских строках (.strings, Info.plist), генерирует `qgram_configuration.json` |
-| [.github/workflows/build-ipa.yml](.github/workflows/build-ipa.yml) | GitHub Actions workflow: клонирует репо, ставит нужный Xcode, гоняет Bazel-сборку, собирает IPA, кладёт артефакт |
+| 👻 Режим призрака | Один переключатель включает все пункты ниже |
+| Не отправлять прочтение | Вы читаете сообщения, а у собеседника они остаются непрочитанными (включая треды, форумы, голосовые и кружки) |
+| Не отправлять «в сети» | Клиент всегда сообщает серверу «не в сети» |
+| Не отправлять «печатает» | Собеседник не видит «печатает…», «записывает голосовое», «отправляет фото» |
+| Не отмечать истории просмотренными | Истории открываются без отметки о просмотре |
+| Сохранять удалённые сообщения | Удалённые собеседником сообщения остаются в чате с меткой 🗑 |
+| Сохранять историю правок | Старые версии изменённых сообщений: меню сообщения → «История правок» |
 
-## 2. Порядок действий (руками, один раз)
+Настройки: **Настройки → PrismGram** (раздел вверху экрана).
+
+Важно знать:
+- Удалённые сообщения и история правок сохраняются только для сообщений, которые
+  приложение уже успело загрузить до удаления/правки. Сервер Telegram удалённое не хранит.
+- Telegram сам ставит статус «в сети», когда вы отправляете сообщение. Это клиент изменить не может.
+- Изменение статуса «в сети» применяется после перезапуска приложения.
+
+## Как это устроено
+
+| Путь | Что это |
+|---|---|
+| [`prismgram/upstream.json`](prismgram/upstream.json) | Репозиторий и коммит Swiftgram, на котором собирается PrismGram |
+| [`prismgram/patches/`](prismgram/patches) | Код функций PrismGram (git-патчи к Swiftgram) |
+| [`prismgram/apply_prismgram.py`](prismgram/apply_prismgram.py) | Накладывает патчи, меняет иконку и имя приложения |
+| [`prismgram/branding/`](prismgram/branding) | Иконка (призма) |
+| [`.github/workflows/build-ipa.yml`](.github/workflows/build-ipa.yml) | Сборка IPA в GitHub Actions |
+
+## Сборка в GitHub Actions
+
+Workflow запускается сам при пуше в `main` или ветки `claude/**`, если менялись `prismgram/**`
+или сам workflow. Вручную: **Actions → Build PrismGram IPA → Run workflow**.
+
+- Раннер `macos-26`, Xcode 26.2 (берётся из `versions.json` Swiftgram).
+- Первая сборка идёт долго (2–5 часов). Кэш Bazel сохраняется, следующие сборки быстрее.
+- Готовый файл: вкладка запуска → **Artifacts → PrismGram-ipa**.
+
+### Секреты (Settings → Secrets and variables → Actions)
+
+| Секрет | Зачем |
+|---|---|
+| `TG_API_ID` | ваш api_id с [my.telegram.org/apps](https://my.telegram.org/apps) |
+| `TG_API_HASH` | ваш api_hash оттуда же |
+
+Без них сборка использует ключи из конфигурации Swiftgram и выводит предупреждение.
+Свои ключи лучше завести: это ваш собственный клиент.
+
+### Установка на iPhone
+
+IPA подписан тестовым сертификатом и напрямую не установится. Переподпишите его при установке:
+[Sideloadly](https://sideloadly.io) или [AltStore](https://altstore.io) (подойдёт бесплатный
+Apple ID, приложение работает 7 дней), либо TrollStore на поддерживаемых версиях iOS.
+
+## Локальная сборка (macOS + Xcode 26.2)
 
 ```bash
-# 1. Клонируешь апстрим (НЕ форкаешь на GitHub заранее, чтобы не тащить чужую историю в приватный форк —
-#    либо форкаешь через github.com/TelegramMessenger/Telegram-iOS -> Fork, дальше клонируешь свой форк)
-git clone --recursive -j8 https://github.com/TelegramMessenger/Telegram-iOS.git QGram-iOS
-cd QGram-iOS
-
-# 2. Прогоняешь ребрендинг
-python3 ../rebrand_to_qgram.py
-
-# 3. Заполняешь build-system/qgram_configuration.json:
-#    - api_id / api_hash с my.telegram.org/apps
-#    - team_id из Keychain Access -> Certificates -> твой сертификат -> Organizational Unit
-
-# 4. Заменяешь иконку приложения на свою (не самолётик Telegram) —
-#    Telegram-iOS/Telegram/Telegram-iOS/Resources/AppIcons и Assets.xcassets/AppIcon*
-
-# 5. Коммитишь и пушишь в свой репозиторий на GitHub
-git remote set-url origin https://github.com/<твой-юзер>/QGram-iOS.git
-git add -A && git commit -m "Rebrand to QGram"
-git push -u origin main
+git clone https://github.com/Swiftgram/Telegram-iOS.git swiftgram
+cd swiftgram
+git checkout cf8b23beaaac4126a396337ac2d5be13f9f76b66
+git submodule update --init --recursive
+python3 /путь/к/этому/репо/prismgram/apply_prismgram.py .
+# дальше — как в README Swiftgram (build-system/Make/Make.py build ...)
 ```
 
-## 3. Настройка секретов в GitHub (Settings → Secrets and variables → Actions)
+## Обновление на новую версию Swiftgram
 
-Нужны для workflow `build-ipa.yml`:
+1. Поменять `commit` в `prismgram/upstream.json`.
+2. Если патч перестал накладываться (скрипт сообщит об этом), применить его вручную
+   с `git apply --3way`, поправить конфликты и пересохранить через `git diff`.
 
-| Secret | Значение |
-|---|---|
-| `TG_API_ID` | из my.telegram.org/apps |
-| `TG_API_HASH` | из my.telegram.org/apps |
-| `QGRAM_BUNDLE_ID` | например `org.qgram.app` |
-| `APPLE_TEAM_ID` | из Apple Developer аккаунта |
-| `IOS_CERT_P12_BASE64` | `base64 -i cert.p12 \| pbcopy` — сертификат подписи в base64 |
-| `IOS_CERT_PASSWORD` | пароль от .p12 |
-| `IOS_PROVISION_PROFILE_BASE64` | `base64 -i profile.mobileprovision \| pbcopy` |
+## Лицензия
 
-Без последних трёх (`IOS_CERT_*`, `IOS_PROVISION_*`) собранный `.ipa` будет unsigned —
-подойдёт только для дальнейшей ресайнинга локально (например через Sideloadly) или
-для запуска на симуляторе.
-
-## 4. Фича «чтение удалённых сообщений» (как в AyuGram)
-
-### Как это работает у AyuGram и почему это возможно
-Telegram-протокол **не хранит удалённые сообщения на сервере** после удаления —
-клиент просто получает событие "удалить у себя эти message_id". AyuGram/Nekogram
-и подобные форки перехватывают это событие **на уровне локального клиента**:
-вместо того чтобы физически стирать сообщение из локальной базы, они:
-1. Оставляют текст сообщения в локальном хранилище (Postbox/SQLite),
-2. Помечают его флагом `isDeletedRemotely`,
-3. В UI чата рисуют такое сообщение полупрозрачным / с бейджем «Удалено»,
-   вместо того чтобы убрать его из ленты.
-
-Это работает **только для сообщений, которые клиент уже успел получить и сохранить
-локально до момента удаления** — то есть нельзя «прочитать» то, что удалили до того,
-как твой QGram успел это скачать (это не бэкдор к серверу Telegram, это просто отказ
-удалять локальную копию).
-
-### Где это в реальном коде Telegram-iOS
-В апстриме уже есть заготовка на уровне хранилища:
-[`submodules/Postbox/Sources/DeletedMessagesView.swift`](https://github.com/TelegramMessenger/Telegram-iOS/blob/master/submodules/Postbox/Sources/DeletedMessagesView.swift) —
-`MutableDeletedMessagesView` слушает операции `.Remove` по `peerId` и собирает список
-`currentDeletedMessages: [MessageId]`, которые исчезли из индекса. Это ядро механизма
-слежения за удалением — но сам **UI и логика "не стирать данные сообщения"** там не
-реализованы (в апстриме Telegram эта view используется для внутренних целей, не для
-показа удалённых юзеру).
-
-### Что реально нужно доработать (план, не готовый код)
-
-1. **Слой хранения (Postbox)**
-   - Найти место, где `MessageHistoryTable` физически удаляет строку сообщения при
-     обработке `updateDeleteMessages` / `.Remove` операции.
-   - Вместо `DELETE` — делать `UPDATE`, помечая сообщение флагом (например, добавить
-     bit в `MessageFlags` типа `.isRemotelyDeleted`), сохраняя текст/медиа.
-   - Учитывать TTL/автоочистку базы, чтобы такие сообщения не удалялись при обычной
-     чистке кэша.
-
-2. **Слой UI (Telegram-iOS/Sources ChatController/ChatMessageItem)**
-   - В `ChatHistoryEntry`/`ChatMessageItem` добавить рендер-вариант: полупрозрачный
-     бабл, бейдж "Удалено" + иконка корзины (как в примере, который я тебе
-     сгенерировал ранее).
-   - Убедиться, что такие сообщения не попадают под обычную логику "message removed
-     from view" в `ChatHistoryViewUpdate`.
-
-3. **Синхронизация с сервером**
-   - При обработке входящего `updates.deleteMessages` / `updateDeleteChannelMessages`
-     не выполнять физическое удаление из Postbox, только выставлять флаг.
-   - Опционально: добавить настройку в UI ("Показывать удалённые сообщения") —
-     как это сделано в AyuGram — чтобы это было явным выбором пользователя, а не
-     скрытым поведением.
-
-4. **Юридический момент**
-   - Это модифицирует протокол-совместимое поведение клиента, не взламывает сервер
-     Telegram и не требует MTProto-патчей — юридически это ближе к тому, что уже
-     легально делают AyuGram/Nekogram/Exteragram (они существуют открыто годами).
-   - Но: раскрытие удалённых сообщений собеседника без его согласия — это уже вопрос
-     этики использования, не мой запрет, а то, что тебе стоит иметь в виду при
-     дистрибуции.
-
-Я не пишу здесь готовый Swift-патч на тысячи строк "с нуля" — с реальным кодом Postbox
-и ChatController придётся работать внутри Xcode с полным контекстом проекта (эти файлы
-завязаны на десятки соседних типов). План выше — конкретная карта, где именно копать.
-
-## 5. Итоговый чеклист
-
-- [ ] Форкнуть/клонировать `TelegramMessenger/Telegram-iOS`
-- [ ] Прогнать `rebrand_to_qgram.py`
-- [ ] Заполнить `qgram_configuration.json` (api_id/api_hash/team_id)
-- [ ] Заменить иконку и лого
-- [ ] Реализовать флаг `isRemotelyDeleted` в Postbox + UI-рендер (см. раздел 4)
-- [ ] Запушить в свой GitHub, добавить секреты
-- [ ] Запустить `build-ipa.yml` вручную (Actions → Run workflow)
-- [ ] Если нужен установленный IPA — добавить сертификат/профиль подписи в секреты
+Telegram-iOS и Swiftgram распространяются под GPLv2 — PrismGram тоже. Имя «Telegram»
+и логотип Telegram для названия/иконки не используются.
