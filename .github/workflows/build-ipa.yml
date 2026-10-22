@@ -18,7 +18,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    # Cheap Linux job: patches must apply and patched Swift files must parse.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PrismGram kit
+        uses: actions/checkout@v4
+
+      - name: Apply patches to Swiftgram
+        run: |
+          set -e
+          REPO=$(python3 -c 'import json;print(json.load(open("prismgram/upstream.json"))["repository"])')
+          COMMIT=$(python3 -c 'import json;print(json.load(open("prismgram/upstream.json"))["commit"])')
+          mkdir -p /tmp/sg && cd /tmp/sg
+          git init -q && git remote add origin "$REPO"
+          git fetch -q --depth 1 origin "$COMMIT" && git checkout -q FETCH_HEAD
+          python3 "$GITHUB_WORKSPACE/prismgram/apply_prismgram.py" /tmp/sg
+
+      - name: Check Swift syntax of patched files
+        run: |
+          set -e
+          python3 -m pip install -q tree-sitter tree-sitter-swift
+          cd /tmp/sg
+          FILES=$(cat "$GITHUB_WORKSPACE"/prismgram/patches/*.patch | sed -n 's|^+++ b/\(.*\.swift\)$|\1|p' | sort -u)
+          # AccountStateManagementUtils.swift has a stray ';' that this parser rejects upstream too.
+          FILES=$(echo "$FILES" | grep -v 'AccountStateManagementUtils.swift' || true)
+          python3 "$GITHUB_WORKSPACE/prismgram/check_swift_syntax.py" $FILES
+
   build:
+    needs: check
     runs-on: macos-26
     timeout-minutes: 355
     # TG_API_ID / TG_API_HASH are stored as secrets of the "P" environment.
