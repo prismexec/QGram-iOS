@@ -361,7 +361,7 @@ index 8c48207f..005235bf 100644
              }
              var flags: Int32 = 0
 diff --git a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
-index 9932a692..91d7c02b 100644
+index 9932a692..f4d57565 100644
 --- a/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 +++ b/submodules/TelegramUI/Sources/ChatInterfaceStateContextMenus.swift
 @@ -1580,6 +1580,18 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
@@ -383,3 +383,31 @@ index 9932a692..91d7c02b 100644
          // MARK: PrismGram: edit history
          let prismEditHistory = message.prismEditHistory
          if !prismEditHistory.isEmpty {
+@@ -1589,12 +1601,24 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
+             }, action: { c, _ in
+                 c?.dismiss(completion: {
+                     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++                    // Alerts don't scroll: show the latest versions and shorten long texts.
++                    let prismMaxShownEntries = 10
++                    let prismMaxEntryLength = 400
++                    func prismShorten(_ text: String) -> String {
++                        if text.count > prismMaxEntryLength {
++                            return String(text.prefix(prismMaxEntryLength)) + "…"
++                        }
++                        return text
++                    }
+                     var historyText = ""
+-                    for entry in prismEditHistory {
++                    if prismEditHistory.count > prismMaxShownEntries {
++                        historyText += (prismIsRussian ? "Показаны последние \(prismMaxShownEntries) из \(prismEditHistory.count)" : "Showing the last \(prismMaxShownEntries) of \(prismEditHistory.count)") + "\n\n"
++                    }
++                    for entry in prismEditHistory.suffix(prismMaxShownEntries) {
+                         historyText += stringForMediumDate(timestamp: entry.date, strings: presentationData.strings, dateTimeFormat: presentationData.dateTimeFormat)
+-                        historyText += "\n" + entry.text + "\n\n"
++                        historyText += "\n" + prismShorten(entry.text) + "\n\n"
+                     }
+-                    historyText += (prismIsRussian ? "Сейчас:" : "Now:") + "\n" + message.text
++                    historyText += (prismIsRussian ? "Сейчас:" : "Now:") + "\n" + prismShorten(message.text)
+                     controllerInteraction.presentController(textAlertController(
+                         context: context,
+                         title: prismIsRussian ? "История правок" : "Edit History",
