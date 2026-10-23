@@ -140,6 +140,8 @@ jobs:
           cfg = json.load(open("build-system/appstore-configuration.json"))
           # Bundle id and team must match build-system/fake-codesigning profiles.
           cfg["sg_config"] = ""
+          app = json.load(open(os.path.join(os.environ["GITHUB_WORKSPACE"], "prismgram", "app.json")))
+          cfg["bundle_id"] = app["bundle_id"]
           # Re-signing with a personal .p12 (Feather, ESign, Sideloadly) gives a profile
           # without iCloud / Siri. CloudKit then crashes the app at launch, so turn both off.
           cfg["enable_icloud"] = False
@@ -150,6 +152,12 @@ jobs:
           json.dump(cfg, open("build-system/prismgram-configuration.json", "w"), indent=2)
           print("bundle_id:", cfg["bundle_id"], "api_id set:", bool(cfg["api_id"]))
           EOF
+
+      - name: Make signing profiles for the PrismGram bundle id
+        run: |
+          set -e
+          BUNDLE_ID=$(python3 -c 'import json;print(json.load(open("prismgram/app.json"))["bundle_id"])')
+          python3 prismgram/make_fake_profiles.py "$SRC_DIR" "$BUNDLE_ID"
 
       - name: Restore Bazel cache
         uses: actions/cache/restore@v4
@@ -223,7 +231,7 @@ jobs:
               "iconURL": "%s/latest/download/icon.png" % base,
               "apps": [{
                   "name": "PrismGram",
-                  "bundleIdentifier": "ph.telegra.Telegraph",
+                  "bundleIdentifier": json.load(open("prismgram/app.json"))["bundle_id"],
                   "developerName": repo.split("/")[0],
                   "subtitle": "Telegram with ghost mode and saved deleted messages",
                   "localizedDescription": "Swiftgram-based Telegram client with AyuGram-style features: ghost mode, saved deleted messages, edit history.",

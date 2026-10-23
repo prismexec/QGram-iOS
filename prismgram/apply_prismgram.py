@@ -202,6 +202,16 @@ def apply_settings_icon(root):
     print("added PrismGram settings icon")
 
 
+def apply_version(root):
+    """PrismGram has its own version numbers (prismgram/app.json), separate from Telegram's."""
+    app = json.loads(read(os.path.join(KIT_DIR, "app.json")))
+    versions_path = os.path.join(root, "versions.json")
+    versions = json.loads(read(versions_path))
+    print("version: Telegram {} -> PrismGram {}".format(versions.get("app"), app["version"]))
+    versions["app"] = app["version"]
+    write(versions_path, json.dumps(versions, indent=4) + "\n")
+
+
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
@@ -210,6 +220,7 @@ def main():
     if not os.path.exists(os.path.join(root, "build-system", "Make", "Make.py")):
         fail("{} is not a Swiftgram / Telegram-iOS checkout".format(root))
     apply_patches(root)
+    apply_version(root)
     apply_icon(root)
     apply_alternate_icons(root)
     apply_settings_icon(root)
