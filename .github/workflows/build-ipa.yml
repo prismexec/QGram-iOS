@@ -361,9 +361,9 @@ jobs:
           print("getMe:", me.returncode, me.stdout[:300], me.stderr[:300])
           result = subprocess.run([
               "curl", "-sS", "--max-time", "900", url,
-              "-F", "chat_id=" + channel,
-              "-F", "parse_mode=HTML",
-              "-F", "caption=" + caption,
+              "--form-string", "chat_id=" + channel,
+              "--form-string", "parse_mode=HTML",
+              "--form-string", "caption=" + caption,
               "-F", "document=@out/PrismGram.ipa",
           ], capture_output=True, text=True)
           try:
