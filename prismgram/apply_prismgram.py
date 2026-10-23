@@ -20,6 +20,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -102,22 +103,18 @@ def apply_name(root):
     if rename_in_file(build_path, fix_build):
         changed.append(build_path)
 
-    # Permission texts and other InfoPlist.strings.
-    def fix_strings_values(content):
-        # "key" = "value";  -> rename only inside the value
-        return re.sub(r'^(\s*"[^"]*"\s*=\s*")(.*)(";\s*)$',
-                      lambda m: m.group(1) + m.group(2).replace(OLD_NAME, NEW_NAME) + m.group(3),
-                      content, flags=re.MULTILINE)
-
+    # Permission texts, onboarding and settings texts.
     patterns = [
-        os.path.join(root, "Telegram", "Telegram-iOS", "*.lproj", "InfoPlist.strings"),
+        os.path.join(root, "Telegram", "Telegram-iOS", "*.lproj", "*.strings"),
         os.path.join(root, "Telegram", "Telegram-iOS", "*.lproj", "AppIntentVocabulary.plist"),
         os.path.join(root, "Swiftgram", "SGStrings", "Strings", "*.lproj", "*.strings"),
     ]
     for pattern in patterns:
         for path in glob.glob(pattern):
             if path.endswith(".strings"):
-                if rename_in_file(path, fix_strings_values):
+                # Keys never contain the old name (checked), and values may span several
+                # lines, so replace every occurrence.
+                if rename_in_file(path, lambda c: c.replace(OLD_NAME, NEW_NAME)):
                     changed.append(path)
 
     # A few hard-coded titles in Swift code ("Swiftgram" string literals only).
@@ -141,9 +138,59 @@ def apply_name(root):
         if rename_in_file(path, lambda c: c.replace('"{}"'.format(OLD_NAME), '"{}"'.format(NEW_NAME))):
             changed.append(path)
 
+    # Other user-visible texts that mention Swiftgram inside a longer string literal.
+    # Only string literals without URLs / paths are touched, and only in these files.
+    literal_files = [
+        "submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift",
+        "submodules/DebugSettingsUI/Sources/DebugController.swift",
+        "submodules/TelegramCore/Sources/Utils/PeerUtils.swift",
+        "submodules/PlatformRestrictionMatching/Sources/PlatformRestrictionMatching.swift",
+        "Swiftgram/SGDebugUI/Sources/SGDebugUI.swift",
+        "Swiftgram/SGProUI/Sources/SGProUI.swift",
+        "Swiftgram/SGPayWall/Sources/SGPayWall.swift",
+    ]
+    literal_re = re.compile(r'"([^"\n]*Swiftgram[^"\n]*)"')
+    def fix_literal(m):
+        text = m.group(1)
+        if "/" in text or "http" in text or text in ("SwiftgramSettings", "SwiftgramPro"):
+            return m.group(0)
+        return '"' + text.replace(OLD_NAME, NEW_NAME) + '"'
+    for relative_path in literal_files:
+        path = os.path.join(root, relative_path)
+        if os.path.exists(path) and rename_in_file(path, lambda c: literal_re.sub(fix_literal, c)):
+            changed.append(path)
+
     if not any(p == build_path for p in changed):
         fail("app display name was not found in Telegram/BUILD")
     print("renamed app in {} files".format(len(changed)))
+
+
+def apply_alternate_icons(root):
+    """Swiftgram ships many alternate icons with its logo. Keep only the default one and make it the prism."""
+    build_path = os.path.join(root, "Telegram", "BUILD")
+    content = read(build_path)
+    updated = re.sub(r"alternate_icon_folders = \[[^\]]*\]", 'alternate_icon_folders = [\n    "SGDefault",\n]', content, count=1)
+    if updated == content:
+        fail("alternate_icon_folders not found in Telegram/BUILD")
+    write(build_path, updated)
+
+    alticon_dir = os.path.join(root, "Telegram", "Telegram-iOS", "SGDefault.alticon")
+    for name in ("SGDefault@2x.png", "SGDefault@3x.png"):
+        target = os.path.join(alticon_dir, name)
+        if not os.path.exists(target):
+            fail("missing " + target)
+        shutil.copyfile(os.path.join(KIT_DIR, "branding", name), target)
+    print("alternate icons: only the PrismGram icon is left")
+
+
+def apply_settings_icon(root):
+    source = os.path.join(KIT_DIR, "branding", "PrismGramSettings.imageset")
+    target = os.path.join(root, "Swiftgram", "SGSettingsUI", "Images.xcassets", "PrismGramSettings.imageset")
+    if not os.path.isdir(os.path.dirname(target)):
+        fail("settings asset catalog not found")
+    shutil.rmtree(target, ignore_errors=True)
+    shutil.copytree(source, target)
+    print("added PrismGram settings icon")
 
 
 def main():
@@ -155,6 +202,8 @@ def main():
         fail("{} is not a Swiftgram / Telegram-iOS checkout".format(root))
     apply_patches(root)
     apply_icon(root)
+    apply_alternate_icons(root)
+    apply_settings_icon(root)
     apply_name(root)
     print("PrismGram sources are ready.")
 

@@ -1,0 +1,275 @@
+diff --git a/Swiftgram/SGAPIToken/Sources/SGAPIToken.swift b/Swiftgram/SGAPIToken/Sources/SGAPIToken.swift
+index 209cbb04..e3da0d6d 100644
+--- a/Swiftgram/SGAPIToken/Sources/SGAPIToken.swift
++++ b/Swiftgram/SGAPIToken/Sources/SGAPIToken.swift
+@@ -14,7 +14,15 @@ public enum SGAPITokenError {
+     case generic(String? = nil)
+ }
+ 
++// MARK: PrismGram: PrismGram never talks to Swiftgram servers.
++private func prismGramBlocksSwiftgramServices() -> Bool {
++    return true
++}
++
+ public func getSGApiToken(context: AccountContext, botUsername: String = SG_CONFIG.botUsername) -> Signal<String, SGAPITokenError> {
++    if prismGramBlocksSwiftgramServices() {
++        return .fail(.generic("Disabled in PrismGram"))
++    }
+     let userId = context.account.peerId.id._internalGetInt64Value()
+     
+     if let (token, expiration) = tokenCache[userId], Date() < expiration {
+diff --git a/Swiftgram/SGGHSettings/Sources/SGGHSettings.swift b/Swiftgram/SGGHSettings/Sources/SGGHSettings.swift
+index 750943d2..d052201b 100644
+--- a/Swiftgram/SGGHSettings/Sources/SGGHSettings.swift
++++ b/Swiftgram/SGGHSettings/Sources/SGGHSettings.swift
+@@ -5,7 +5,15 @@ import AccountContext
+ import TelegramCore
+ 
+ 
++// MARK: PrismGram: PrismGram never talks to Swiftgram servers.
++private func prismGramBlocksSwiftgramServices() -> Bool {
++    return true
++}
++
+ public func updateSGGHSettingsInteractivelly(context: AccountContext) {
++    if prismGramBlocksSwiftgramServices() {
++        return
++    }
+     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+     let locale = presentationData.strings.baseLanguageCode
+     let _ = Task {
+diff --git a/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift b/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
+new file mode 100644
+index 00000000..caac9443
+--- /dev/null
++++ b/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
+@@ -0,0 +1,106 @@
++// MARK: PrismGram
++import Foundation
++import UIKit
++import Display
++import SwiftSignalKit
++import TelegramCore
++import TelegramPresentationData
++import ItemListUI
++import AccountContext
++import SGItemListUI
++import SGSimpleSettings
++
++private enum PrismGramSection: Int32, SGItemListSection {
++    case ghost
++    case history
++    case other
++    case about
++}
++
++private enum PrismGramToggle: String {
++    case ghostMode
++    case noReadReceipts
++    case noOnline
++    case noTyping
++    case noStoryViews
++    case readOnReply
++    case saveDeletedMessages
++    case saveEditHistory
++    case hideSponsoredMessages
++}
++
++private typealias PrismGramEntry = SGItemListUIEntry<PrismGramSection, PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, AnyHashable>
++
++private func prismGramEntries(presentationData: PresentationData) -> [PrismGramEntry] {
++    let lang = presentationData.strings.baseLanguageCode
++    let ru = lang.hasPrefix("ru") || lang.hasPrefix("uk")
++    let settings = SGSimpleSettings.shared
++    let id = SGItemListCounter()
++    var entries: [PrismGramEntry] = []
++
++    entries.append(.header(id: id.count, section: .ghost, text: ru ? "РЕЖИМ ПРИЗРАКА" : "GHOST MODE", badge: nil))
++    entries.append(.toggle(id: id.count, section: .ghost, settingName: .ghostMode, value: settings.prismGhostModeEnabled, text: ru ? "👻 Режим призрака" : "👻 Ghost Mode", enabled: true))
++    entries.append(.toggle(id: id.count, section: .ghost, settingName: .noReadReceipts, value: settings.prismGhostNoReadReceipts, text: ru ? "Не отправлять прочтение" : "Don't send read receipts", enabled: true))
++    entries.append(.toggle(id: id.count, section: .ghost, settingName: .noOnline, value: settings.prismGhostNoOnline, text: ru ? "Не отправлять «в сети»" : "Don't send online status", enabled: true))
++    entries.append(.toggle(id: id.count, section: .ghost, settingName: .noTyping, value: settings.prismGhostNoTyping, text: ru ? "Не отправлять «печатает»" : "Don't send typing status", enabled: true))
++    entries.append(.toggle(id: id.count, section: .ghost, settingName: .noStoryViews, value: settings.prismGhostNoStoryViews, text: ru ? "Не отмечать истории просмотренными" : "Don't mark stories as viewed", enabled: true))
++    entries.append(.toggle(id: id.count, section: .ghost, settingName: .readOnReply, value: settings.prismGhostReadOnReply, text: ru ? "Читать при ответе" : "Read on reply", enabled: settings.prismGhostNoReadReceipts))
++    entries.append(.notice(id: id.count, section: .ghost, text: ru
++        ? "Собеседник не увидит, что вы прочитали сообщения, что вы в сети и что печатаете. «Читать при ответе»: когда вы пишете в чат, он отмечается прочитанным. Отправить прочтение вручную — удерживайте чат или сообщение → «👻 Отправить прочтение». Быстро включить режим — удерживайте вкладку «Чаты»."
++        : "Others won't see that you read their messages, that you are online or typing. \"Read on reply\" marks a chat as read when you write to it. To send a read receipt manually, long-press a chat or a message → \"👻 Send Read Receipt\". Long-press the Chats tab to toggle ghost mode quickly."))
++
++    entries.append(.header(id: id.count, section: .history, text: ru ? "ИСТОРИЯ СООБЩЕНИЙ" : "MESSAGE HISTORY", badge: nil))
++    entries.append(.toggle(id: id.count, section: .history, settingName: .saveDeletedMessages, value: settings.prismSaveDeletedMessages, text: ru ? "Сохранять удалённые сообщения" : "Keep deleted messages", enabled: true))
++    entries.append(.toggle(id: id.count, section: .history, settingName: .saveEditHistory, value: settings.prismSaveEditHistory, text: ru ? "Сохранять историю правок" : "Keep edit history", enabled: true))
++    entries.append(.notice(id: id.count, section: .history, text: ru
++        ? "Удалённые сообщения остаются в чате с меткой 🗑. Старые версии изменённых сообщений — в меню сообщения → «История правок». Работает для сообщений, которые уже загрузились на устройство."
++        : "Deleted messages stay in the chat marked with 🗑. Previous versions of edited messages are in the message menu → Edit History. Works for messages already loaded on this device."))
++
++    entries.append(.header(id: id.count, section: .other, text: ru ? "ДРУГОЕ" : "OTHER", badge: nil))
++    entries.append(.toggle(id: id.count, section: .other, settingName: .hideSponsoredMessages, value: settings.prismHideSponsoredMessages, text: ru ? "Скрывать рекламу в каналах" : "Hide sponsored messages", enabled: true))
++
++    let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? ""
++    let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? ""
++    entries.append(.notice(id: id.count, section: .about, text: "PrismGram \(version) (\(build))"))
++
++    return entries
++}
++
++public func prismGramSettingsController(context: AccountContext) -> ViewController {
++    let reloadPromise = ValuePromise(true, ignoreRepeated: false)
++
++    let arguments = SGItemListArguments<PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, AnyHashable>(context: context, setBoolValue: { setting, value in
++        let settings = SGSimpleSettings.shared
++        switch setting {
++        case .ghostMode:
++            settings.prismGhostModeEnabled = value
++        case .noReadReceipts:
++            settings.prismGhostNoReadReceipts = value
++        case .noOnline:
++            settings.prismGhostNoOnline = value
++        case .noTyping:
++            settings.prismGhostNoTyping = value
++        case .noStoryViews:
++            settings.prismGhostNoStoryViews = value
++        case .readOnReply:
++            settings.prismGhostReadOnReply = value
++        case .saveDeletedMessages:
++            settings.prismSaveDeletedMessages = value
++        case .saveEditHistory:
++            settings.prismSaveEditHistory = value
++        case .hideSponsoredMessages:
++            settings.prismHideSponsoredMessages = value
++        }
++        // Ghost mode switches depend on each other, redraw the whole list.
++        reloadPromise.set(true)
++    })
++
++    let signal = combineLatest(reloadPromise.get(), context.sharedContext.presentationData)
++    |> map { _, presentationData -> (ItemListControllerState, (ItemListNodeState, Any)) in
++        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text("PrismGram"), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
++        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: prismGramEntries(presentationData: presentationData), style: .blocks, ensureVisibleItemTag: nil, initialScrollToItem: nil)
++        return (controllerState, (listState, arguments))
++    }
++
++    return ItemListController(context: context, state: signal)
++}
+diff --git a/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift b/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift
+index 6b0a5c21..ac88cef9 100644
+--- a/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift
++++ b/Swiftgram/SGSimpleSettings/Sources/SimpleSettings.swift
+@@ -305,7 +305,7 @@ public class SGSimpleSettings {
+         Keys.hideTabBar.rawValue: false,
+         Keys.showDC.rawValue: false,
+         Keys.showCreationDate.rawValue: true,
+-        Keys.showRegDate.rawValue: true,
++        Keys.showRegDate.rawValue: false, // MARK: PrismGram: needs Swiftgram servers
+         Keys.regDateCache.rawValue: [:],
+         Keys.compactChatList.rawValue: false,
+         Keys.chatListLines.rawValue: ChatListLines.defaultValue.rawValue,
+diff --git a/Swiftgram/SGStrings/Sources/LocalizationManager.swift b/Swiftgram/SGStrings/Sources/LocalizationManager.swift
+index 331586aa..59f72867 100644
+--- a/Swiftgram/SGStrings/Sources/LocalizationManager.swift
++++ b/Swiftgram/SGStrings/Sources/LocalizationManager.swift
+@@ -65,6 +65,10 @@ public class SGLocalizationManager {
+     }
+     
+     public func downloadLocale(_ locale: String) {
++        // MARK: PrismGram: keep the bundled (PrismGram) texts, don't fetch Swiftgram's
++        if prismGramBlocksSwiftgramServices() {
++            return
++        }
+         #if DEBUG
+         SGLogger.shared.log("Strings", "DEBUG ignoring locale download: \(locale)")
+         if ({ return true }()) {
+@@ -132,3 +136,8 @@ public extension String {
+         return SGLocalizationManager.shared.localizedString(self, locale, args: args)
+     }
+ }
++
++// MARK: PrismGram: PrismGram never talks to Swiftgram servers.
++private func prismGramBlocksSwiftgramServices() -> Bool {
++    return true
++}
+diff --git a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
+index 888c04e6..7703b934 100644
+--- a/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
++++ b/submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift
+@@ -119,6 +119,8 @@ let colorViolet = UIColor(rgb: 0x5E5CE6)
+ public struct PresentationResourcesSettings {
+     public static let swiftgram = renderSettingsIcon(name: "SwiftgramSettings", scaleFactor: 30.0 / 512.0)
+     public static let swiftgramPro = renderSettingsIcon(name: "SwiftgramPro", scaleFactor: 30.0 / 256.0)
++    // MARK: PrismGram
++    public static let prismGram = renderSettingsIcon(name: "PrismGramSettings", scaleFactor: 0.62, backgroundColors: [UIColor(rgb: 0x00C2FF), UIColor(rgb: 0x7B2FF7)])
+     public static let proxy = renderSettingsIcon(name: "Item List/Icons/Proxy", backgroundColors: [colorGreen])
+     public static let savedMessages = renderSettingsIcon(name: "Item List/Icons/SavedMessages", backgroundColors: [colorBlue])
+     public static let recentCalls = renderSettingsIcon(name: "Item List/Icons/Phone", backgroundColors: [colorGreen])
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+index 68c12c91..c8ab7824 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift
+@@ -47,7 +47,7 @@ extension PeerInfoScreenNode {
+         }
+         switch section {
+         case .swiftgram:
+-            self.controller?.push(sgSettingsController(context: self.context))
++            self.controller?.push(prismGramSettingsController(context: self.context)) // MARK: PrismGram
+         case .swiftgramPro:
+             if self.context.sharedContext.immediateSGStatus.status > 1 {
+                 self.controller?.push(self.context.sharedContext.makeSGProController(context: self.context))
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index 4dfd6888..dad0cd79 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -209,24 +209,8 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
+         swiftgramLabel = .none
+     }
+ 
+-    let hasNewSGProFeatures = {
+-        return false
+-    }
+-    let swiftgramProLabel: PeerInfoScreenDisclosureItem.Label
+-    if hasNewSGProFeatures() {
+-        swiftgramProLabel = .titleBadge(presentationData.strings.Settings_New, presentationData.theme.list.itemAccentColor)
+-    } else {
+-        swiftgramProLabel = .none
+-    }
+-    
+-    
+-    let sgWebSettings = context.currentAppConfiguration.with({ $0 }).sgWebSettings
+-    if sgWebSettings.global.paymentsEnabled || context.sharedContext.immediateSGStatus.status > 1 {
+-        items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 0, label: swiftgramProLabel, text: "Swiftgram Pro", icon: PresentationResourcesSettings.swiftgramPro, action: {
+-            interaction.openSettings(.swiftgramPro)
+-        }))
+-    }
+-    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 1, label: swiftgramLabel, text: "Swiftgram", icon: PresentationResourcesSettings.swiftgram, action: {
++    // MARK: PrismGram: a single PrismGram entry instead of Swiftgram / Swiftgram Pro
++    items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 1, label: swiftgramLabel, text: "PrismGram", icon: PresentationResourcesSettings.prismGram, action: {
+         interaction.openSettings(.swiftgram)
+     }))
+ 
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index 01ba0555..688e3fd8 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -987,8 +987,12 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+                 icons.append(PresentationAppIcon(name: "PremiumBlack", imageName: "PremiumBlack", isPremium: true))
+                 
+                 
+-                // MARK: Swiftgram
++                // MARK: PrismGram: only the PrismGram icon
+                 icons = [
++                    PresentationAppIcon(name: "SGDefault", imageName: "SGDefault", isDefault: true)
++                ]
++                // MARK: Swiftgram
++                let _ = [
+                     PresentationAppIcon(name: "SGDefault", imageName: "SGDefault", isDefault: true),
+                     PresentationAppIcon(name: "SGBlack", imageName: "SGBlack"),
+                     PresentationAppIcon(name: "SGLegacy", imageName: "SGLegacy"),
+@@ -1006,10 +1010,6 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+                     PresentationAppIcon(name: "SGGlass", imageName: "SGGlass"),
+                     PresentationAppIcon(name: "SGSparkling", imageName: "SGSparkling"),
+                 ]
+-
+-                if Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt" {
+-                    icons.append(PresentationAppIcon(name: "SGBeta", imageName: "SGBeta"))
+-                }
+                 
+                 return icons
+             } else {
