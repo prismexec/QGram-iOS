@@ -12,6 +12,10 @@ on:
         description: "Only post this already published build (e.g. 3754) to the Telegram channel"
         required: false
         default: ""
+      channel_setup:
+        description: "Only set up the Telegram channel: all, profile (avatar + description) or posts"
+        required: false
+        default: ""
   push:
     branches: [ "main", "claude/**" ]
     paths:
@@ -25,7 +29,7 @@ concurrency:
 jobs:
   check:
     # Cheap Linux job: patches must apply and patched Swift files must parse.
-    if: ${{ !inputs.post_build }}
+    if: ${{ !inputs.post_build && !inputs.channel_setup }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -341,39 +345,29 @@ jobs:
         if: steps.decide.outputs.post == 'true'
         env:
           BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_API: http://127.0.0.1:8081
           BUILD_NUMBER: ${{ inputs.post_build || needs.build.outputs.build_number }}
         run: |
-          python3 - <<'EOF'
-          import json, os, subprocess, sys
-          app = json.load(open("prismgram/app.json"))
-          channel = app.get("channel", "@prismgram_ios")
-          lines = ["<b>PrismGram {} ({})</b>".format(app["version"], os.environ["BUILD_NUMBER"])]
-          changelog = app.get("changelog") or []
-          if changelog:
-              lines.append("")
-              lines.append("Что нового:")
-              lines += ["• " + item for item in changelog]
-          lines.append("")
-          lines.append("Установка: подпишите IPA через Feather / ESign / Sideloadly.")
-          caption = "\n".join(lines)[:1024]
-          url = "http://127.0.0.1:8081/bot{}/sendDocument".format(os.environ["BOT_TOKEN"])
-          me = subprocess.run(["curl", "-sS", "--max-time", "60", "http://127.0.0.1:8081/bot{}/getMe".format(os.environ["BOT_TOKEN"])], capture_output=True, text=True)
-          print("getMe:", me.returncode, me.stdout[:300], me.stderr[:300])
-          result = subprocess.run([
-              "curl", "-sS", "--max-time", "900", url,
-              "--form-string", "chat_id=" + channel,
-              "--form-string", "parse_mode=HTML",
-              "--form-string", "caption=" + caption,
-              "-F", "document=@out/PrismGram.ipa",
-          ], capture_output=True, text=True)
-          try:
-              answer = json.loads(result.stdout or "{}")
-          except ValueError:
-              answer = {}
-          if not answer.get("ok"):
-              print("Telegram error: curl exit", result.returncode, "stdout:", result.stdout[:1000], "stderr:", result.stderr[:1000])
-              print(subprocess.run(["docker", "logs", "--tail", "80", "botapi"], capture_output=True, text=True).stderr[-4000:])
-              sys.exit(1)
-          print("Posted to", channel)
-          EOF
+          python3 -m pip install --quiet --break-system-packages pillow
+          python3 prismgram/channel/channel.py release "$BUILD_NUMBER" out/PrismGram.ipa || { docker logs --tail 80 botapi; exit 1; }
+
+  channel:
+    # Manual only: avatar, description and the pinned posts of the channel.
+    if: ${{ inputs.channel_setup }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: P
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PrismGram kit
+        uses: actions/checkout@v4
+
+      - name: Set up the channel
+        env:
+          BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          WHAT: ${{ inputs.channel_setup }}
+        run: |
+          python3 -m pip install --quiet --break-system-packages pillow
+          python3 prismgram/channel/channel.py setup "$WHAT"
 
