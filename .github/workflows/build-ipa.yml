@@ -7,6 +7,11 @@ name: Build PrismGram IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      post_build:
+        description: "Only post this already published build (e.g. 3754) to the Telegram channel"
+        required: false
+        default: ""
   push:
     branches: [ "main", "claude/**" ]
     paths:
@@ -20,6 +25,7 @@ concurrency:
 jobs:
   check:
     # Cheap Linux job: patches must apply and patched Swift files must parse.
+    if: ${{ !inputs.post_build }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -272,6 +278,7 @@ jobs:
   telegram:
     # Posts the IPA and the changelog to the Telegram channel once per new PrismGram version.
     needs: build
+    if: ${{ always() && (needs.build.result == 'success' || inputs.post_build) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: P
@@ -286,7 +293,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+          BUILD_NUMBER: ${{ inputs.post_build || needs.build.outputs.build_number }}
+          FORCE: ${{ inputs.post_build }}
         run: |
           set -e
           if [ -z "$BOT_TOKEN" ]; then
@@ -297,7 +305,10 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           # Post only the first build of each version.
           OLDER=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | select(.name | startswith(\"PrismGram $VERSION \")) | select(.tag_name != \"build-$BUILD_NUMBER\")] | length")
-          if [ "$OLDER" != "0" ]; then
+          if [ -n "$FORCE" ]; then
+            echo "Manual post of build $BUILD_NUMBER."
+            echo "post=true" >> "$GITHUB_OUTPUT"
+          elif [ "$OLDER" != "0" ]; then
             echo "Version $VERSION was already posted, skipping."
             echo "post=false" >> "$GITHUB_OUTPUT"
           else
@@ -309,7 +320,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download "build-${{ needs.build.outputs.build_number }}" -R "$GITHUB_REPOSITORY" -p PrismGram.ipa -D out
+          gh release download "build-${{ inputs.post_build || needs.build.outputs.build_number }}" -R "$GITHUB_REPOSITORY" -p PrismGram.ipa -D out
+          ls -la out
 
       - name: Start a local Bot API server (uploads up to 2 GB)
         if: steps.decide.outputs.post == 'true'
@@ -329,7 +341,7 @@ jobs:
         if: steps.decide.outputs.post == 'true'
         env:
           BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+          BUILD_NUMBER: ${{ inputs.post_build || needs.build.outputs.build_number }}
         run: |
           python3 - <<'EOF'
           import json, os, subprocess, sys
@@ -345,16 +357,22 @@ jobs:
           lines.append("Установка: подпишите IPA через Feather / ESign / Sideloadly.")
           caption = "\n".join(lines)[:1024]
           url = "http://127.0.0.1:8081/bot{}/sendDocument".format(os.environ["BOT_TOKEN"])
+          me = subprocess.run(["curl", "-sS", "--max-time", "60", "http://127.0.0.1:8081/bot{}/getMe".format(os.environ["BOT_TOKEN"])], capture_output=True, text=True)
+          print("getMe:", me.returncode, me.stdout[:300], me.stderr[:300])
           result = subprocess.run([
-              "curl", "-s", url,
+              "curl", "-sS", "--max-time", "900", url,
               "-F", "chat_id=" + channel,
               "-F", "parse_mode=HTML",
               "-F", "caption=" + caption,
               "-F", "document=@out/PrismGram.ipa",
           ], capture_output=True, text=True)
-          answer = json.loads(result.stdout or "{}")
+          try:
+              answer = json.loads(result.stdout or "{}")
+          except ValueError:
+              answer = {}
           if not answer.get("ok"):
-              print("Telegram error:", result.stdout, result.stderr)
+              print("Telegram error: curl exit", result.returncode, "stdout:", result.stdout[:1000], "stderr:", result.stderr[:1000])
+              print(subprocess.run(["docker", "logs", "--tail", "80", "botapi"], capture_output=True, text=True).stderr[-4000:])
               sys.exit(1)
           print("Posted to", channel)
           EOF
