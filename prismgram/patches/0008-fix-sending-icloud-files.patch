@@ -1,0 +1,16 @@
+diff --git a/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift b/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift
+index 1c509b5d..580bda10 100644
+--- a/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift
++++ b/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift
+@@ -57,7 +57,10 @@ public enum LegacyICloudFilePickerMode {
+     var documentPickerMode: UIDocumentPickerMode {
+         switch self {
+         case .default:
+-            return .open
++            // MARK: PrismGram: copy the file in (iOS downloads it from iCloud first).
++            // Opening in place needs the iCloud entitlement, which re-signed builds don't have,
++            // so iCloud Drive files that weren't downloaded were never sent.
++            return .import
+         case .import:
+             return .import
+         case .export:
