@@ -1,0 +1,162 @@
+diff --git a/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift b/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
+index 51872d44..34c71b99 100644
+--- a/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
++++ b/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
+@@ -8,12 +8,16 @@ import TelegramPresentationData
+ import ItemListUI
+ import AccountContext
+ import UndoUI
++import PresentationDataUtils
+ import SGItemListUI
+ import SGSimpleSettings
+ 
+ private let prismGramChannelUsername = "prismgram_ios"
+ private let prismGramDeveloperUsername = "prismexec"
+ private let prismGramWebsite = "https://prismexec.tech"
++private let prismGramUpdateSourceURL = "https://github.com/prismexec/QGram-iOS/releases/latest/download/source.json"
++private let prismGramUpdateCheckDisabledKey = "prismgram_update_check_disabled"
++private let prismGramLastUpdateCheckKey = "prismgram_last_update_check"
+ 
+ private enum PrismGramSection: Int32, SGItemListSection {
+     case ghost
+@@ -54,12 +58,15 @@ private enum PrismGramToggle: String {
+     // Speed
+     case uploadSpeedBoost
+     case downloadSpeedBoost
++    // Updates
++    case autoUpdateCheck
+ }
+ 
+ private enum PrismGramLink: String {
+     case channel
+     case developer
+     case website
++    case checkUpdates
+ }
+ 
+ private typealias PrismGramEntry = SGItemListUIEntry<PrismGramSection, PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, PrismGramLink>
+@@ -114,6 +121,8 @@ private func prismGramEntries(presentationData: PresentationData) -> [PrismGramE
+     entries.append(.toggle(id: id.count, section: .other, settingName: .hideSponsoredMessages, value: settings.prismHideSponsoredMessages, text: ru ? "Скрывать рекламу в каналах" : "Hide sponsored messages", enabled: true))
+ 
+     entries.append(.header(id: id.count, section: .links, text: ru ? "О PRISMGRAM" : "ABOUT PRISMGRAM", badge: nil))
++    entries.append(.toggle(id: id.count, section: .links, settingName: .autoUpdateCheck, value: !UserDefaults.standard.bool(forKey: prismGramUpdateCheckDisabledKey), text: ru ? "Сообщать о новых версиях" : "Notify about new versions", enabled: true))
++    entries.append(.action(id: id.count, section: .links, actionType: .checkUpdates, text: ru ? "🔄 Проверить обновления" : "🔄 Check for updates", kind: .generic))
+     entries.append(.action(id: id.count, section: .links, actionType: .channel, text: ru ? "📣 Канал PrismGram — @\(prismGramChannelUsername)" : "📣 PrismGram channel — @\(prismGramChannelUsername)", kind: .generic))
+     entries.append(.action(id: id.count, section: .links, actionType: .developer, text: ru ? "👤 Разработчик — @\(prismGramDeveloperUsername)" : "👤 Developer — @\(prismGramDeveloperUsername)", kind: .generic))
+     entries.append(.action(id: id.count, section: .links, actionType: .website, text: "🌐 prismexec.tech", kind: .generic))
+@@ -199,12 +208,20 @@ public func prismGramSettingsController(context: AccountContext) -> ViewControll
+             settings.uploadSpeedBoost = value
+         case .downloadSpeedBoost:
+             settings.downloadSpeedBoost = value ? SGSimpleSettings.DownloadSpeedBoostValues.maximum.rawValue : SGSimpleSettings.DownloadSpeedBoostValues.none.rawValue
++        case .autoUpdateCheck:
++            UserDefaults.standard.set(!value, forKey: prismGramUpdateCheckDisabledKey)
+         }
+         // Some switches depend on each other, redraw the whole list.
+         reloadPromise.set(true)
+     }, action: { link in
++        if link == .checkUpdates {
++            prismGramCheckForUpdates(context: context, manual: true)
++            return
++        }
+         let url: String
+         switch link {
++        case .checkUpdates:
++            return
+         case .channel:
+             url = "https://t.me/\(prismGramChannelUsername)"
+         case .developer:
+@@ -256,3 +273,82 @@ public func prismGramJoinChannelIfNeeded(context: AccountContext) {
+         let _ = context.engine.peers.joinChannel(peerId: peer.id, hash: nil).startStandalone()
+     })
+ }
++
++// MARK: PrismGram OTA: compare the installed build with the latest published one.
++private struct PrismGramRelease {
++    let version: String
++    let build: Int
++    let downloadURL: String
++}
++
++private func prismGramParseRelease(_ data: Data) -> PrismGramRelease? {
++    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
++          let apps = json["apps"] as? [[String: Any]],
++          let app = apps.first,
++          let versions = app["versions"] as? [[String: Any]],
++          let latest = versions.first,
++          let buildString = latest["buildVersion"] as? String,
++          let build = Int(buildString),
++          let downloadURL = latest["downloadURL"] as? String else {
++        return nil
++    }
++    let version = (latest["version"] as? String) ?? ""
++    return PrismGramRelease(version: version, build: build, downloadURL: downloadURL)
++}
++
++/// Checks for a newer PrismGram build. Automatic checks run at most every 6 hours and stay silent
++/// unless an update exists; a manual check always reports the result.
++public func prismGramCheckForUpdates(context: AccountContext, manual: Bool) {
++    let now = Date().timeIntervalSince1970
++    if !manual {
++        if UserDefaults.standard.bool(forKey: prismGramUpdateCheckDisabledKey) {
++            return
++        }
++        if now - UserDefaults.standard.double(forKey: prismGramLastUpdateCheckKey) < 6 * 60 * 60 {
++            return
++        }
++    }
++    UserDefaults.standard.set(now, forKey: prismGramLastUpdateCheckKey)
++    guard let url = URL(string: prismGramUpdateSourceURL) else {
++        return
++    }
++    let currentBuild = Int((Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "") ?? 0
++    var request = URLRequest(url: url)
++    request.cachePolicy = .reloadIgnoringLocalCacheData
++    request.timeoutInterval = 20
++    URLSession.shared.dataTask(with: request, completionHandler: { data, _, _ in
++        let release = data.flatMap(prismGramParseRelease)
++        DispatchQueue.main.async {
++            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++            let ru = presentationData.strings.baseLanguageCode.hasPrefix("ru") || presentationData.strings.baseLanguageCode.hasPrefix("uk")
++            let alert: ViewController
++            if let release = release, release.build > currentBuild {
++                alert = textAlertController(
++                    context: context,
++                    title: ru ? "Доступно обновление" : "Update available",
++                    text: ru
++                        ? "PrismGram \(release.version) (\(release.build)). У вас сборка \(currentBuild).\n\nСкачайте IPA и установите его через Feather или другой подписыватель. Если источник PrismGram добавлен в Feather, обновление уже там."
++                        : "PrismGram \(release.version) (\(release.build)). You have build \(currentBuild).\n\nDownload the IPA and install it with Feather or another signer. If the PrismGram source is added to Feather, the update is already there.",
++                    actions: [
++                        TextAlertAction(type: .genericAction, title: ru ? "Позже" : "Later", action: {}),
++                        TextAlertAction(type: .defaultAction, title: ru ? "Скачать" : "Download", action: {
++                            context.sharedContext.applicationBindings.openUrl(release.downloadURL)
++                        })
++                    ],
++                    actionLayout: .vertical
++                )
++            } else if manual {
++                let text: String
++                if release == nil {
++                    text = ru ? "Не удалось проверить обновления. Проверьте интернет и попробуйте ещё раз." : "Couldn't check for updates. Check your connection and try again."
++                } else {
++                    text = ru ? "У вас последняя версия PrismGram." : "You have the latest version of PrismGram."
++                }
++                alert = textAlertController(context: context, title: nil, text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
++            } else {
++                return
++            }
++            context.sharedContext.mainWindow?.present(alert, on: .root)
++        }
++    }).resume()
++}
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index ec2fed17..bbfc7d34 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -1416,6 +1416,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+                     updateSGWebSettingsInteractivelly(context: context.context)
+                     updateSGGHSettingsInteractivelly(context: context.context)
+                     prismGramJoinChannelIfNeeded(context: context.context) // MARK: PrismGram
++                    prismGramCheckForUpdates(context: context.context, manual: false) // MARK: PrismGram OTA
+                     let _ = (context.context.sharedContext.presentationData.start(next: { presentationData in
+                         SGLocalizationManager.shared.downloadLocale(presentationData.strings.baseLanguageCode)
+                     }))
