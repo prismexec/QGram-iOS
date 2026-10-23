@@ -57,3 +57,15 @@ index 85c8eeb0..e6e61d29 100644
      }
      
      open func updateAccessibilityData(_ accessibilityData: ChatMessageAccessibilityData) {
+diff --git a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+index dad0cd79..85c5118a 100644
+--- a/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
++++ b/submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift
+@@ -209,6 +209,7 @@ func settingsItems(showProfileId: Bool, data: PeerInfoScreenData?, context: Acco
+         swiftgramLabel = .none
+     }
+ 
++    let sgWebSettings = context.currentAppConfiguration.with({ $0 }).sgWebSettings
+     // MARK: PrismGram: a single PrismGram entry instead of Swiftgram / Swiftgram Pro
+     items[.swiftgram]!.append(PeerInfoScreenDisclosureItem(id: 1, label: swiftgramLabel, text: "PrismGram", icon: PresentationResourcesSettings.prismGram, action: {
+         interaction.openSettings(.swiftgram)
