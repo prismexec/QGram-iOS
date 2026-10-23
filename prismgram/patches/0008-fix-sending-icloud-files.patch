@@ -1,3 +1,44 @@
+diff --git a/submodules/ICloudResources/Sources/ICloudResources.swift b/submodules/ICloudResources/Sources/ICloudResources.swift
+index b13f4dbb..2b30c341 100644
+--- a/submodules/ICloudResources/Sources/ICloudResources.swift
++++ b/submodules/ICloudResources/Sources/ICloudResources.swift
+@@ -123,9 +123,9 @@ private func audioArtworkData(from asset: AVURLAsset) -> Data? {
+ 
+ private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
+     if #available(iOSApplicationExtension 9.0, iOS 9.0, *) {
+-        guard url.startAccessingSecurityScopedResource() else {
+-            return nil
+-        }
++        // MARK: PrismGram: imported copies and some re-signed builds get no security scope;
++        // the file is still readable, so don't drop it.
++        let prismIsAccessingScope = url.startAccessingSecurityScopedResource()
+         
+         guard let urlData = try? url.bookmarkData(options: URL.BookmarkCreationOptions.suitableForBookmarkFile, includingResourceValuesForKeys: nil, relativeTo: nil) else {
+             return nil
+@@ -185,7 +185,9 @@ private func descriptionWithUrl(_ url: URL) -> ICloudFileDescription? {
+             audioMetadata: audioMetadata
+         )
+         
+-        url.stopAccessingSecurityScopedResource()
++        if prismIsAccessingScope {
++            url.stopAccessingSecurityScopedResource()
++        }
+         
+         return result
+     } else {
+@@ -298,10 +300,8 @@ public func fetchICloudFileResource(resource: ICloudFileResource) -> Signal<Engi
+             }
+         }
+         
+-        guard url.startAccessingSecurityScopedResource() else {
+-            subscriber.putCompletion()
+-            return EmptyDisposable
+-        }
++        // MARK: PrismGram: same as above, read the file even without a security scope.
++        let _ = url.startAccessingSecurityScopedResource()
+         
+         let complete = {
+             if resource.thumbnail {
 diff --git a/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift b/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift
 index 1c509b5d..580bda10 100644
 --- a/submodules/LegacyMediaPickerUI/Sources/LegacyICloudFilePicker.swift
