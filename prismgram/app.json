@@ -1,5 +1,12 @@
 {
   "name": "PrismGram",
   "version": "1.0.0",
-  "bundle_id": "com.prism.prismgram"
+  "bundle_id": "com.prism.prismgram",
+  "channel": "@prismgram_ios",
+  "changelog": [
+    "Первый релиз PrismGram",
+    "Режим призрака: без прочтений, «в сети» и «печатает»",
+    "Удалённые сообщения остаются в чате, история правок",
+    "Меню «Настройки → PrismGram» и проверка обновлений"
+  ]
 }

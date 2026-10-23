@@ -54,6 +54,8 @@ jobs:
     timeout-minutes: 355
     # TG_API_ID / TG_API_HASH are stored as secrets of the "P" environment.
     environment: P
+    outputs:
+      build_number: ${{ steps.build.outputs.build_number }}
 
     env:
       SRC_DIR: /Users/Shared/prismgram-src
@@ -176,6 +178,7 @@ jobs:
           BUILD_NUMBER=$(( $(cat build_number_offset) + ${{ github.run_number }} ))
           echo "Build number $BUILD_NUMBER"
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "APP_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')" >> "$GITHUB_ENV"
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
           python3 -u build-system/Make/Make.py \
@@ -265,3 +268,94 @@ jobs:
             out/PrismGram.ipa
             out/source.json
             out/icon.png
+
+  telegram:
+    # Posts the IPA and the changelog to the Telegram channel once per new PrismGram version.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: P
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PrismGram kit
+        uses: actions/checkout@v4
+
+      - name: Decide whether to post
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+        run: |
+          set -e
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "::notice::TG_BOT_TOKEN is not set, skipping the Telegram post."
+            echo "post=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          VERSION=$(python3 -c 'import json;print(json.load(open("prismgram/app.json"))["version"])')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Post only the first build of each version.
+          OLDER=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq "[.[] | select(.name | startswith(\"PrismGram $VERSION \")) | select(.tag_name != \"build-$BUILD_NUMBER\")] | length")
+          if [ "$OLDER" != "0" ]; then
+            echo "Version $VERSION was already posted, skipping."
+            echo "post=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "post=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download the IPA
+        if: steps.decide.outputs.post == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "build-${{ needs.build.outputs.build_number }}" -R "$GITHUB_REPOSITORY" -p PrismGram.ipa -D out
+
+      - name: Start a local Bot API server (uploads up to 2 GB)
+        if: steps.decide.outputs.post == 'true'
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TG_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          set -e
+          docker run -d --name botapi -p 8081:8081 -e TELEGRAM_API_ID -e TELEGRAM_API_HASH -e TELEGRAM_LOCAL=1 -v "$PWD/out:/data/out" aiogram/telegram-bot-api:latest
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null "http://127.0.0.1:8081/"; then echo "Bot API is up"; exit 0; fi
+            sleep 2
+          done
+          docker logs botapi; exit 1
+
+      - name: Post to the channel
+        if: steps.decide.outputs.post == 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BUILD_NUMBER: ${{ needs.build.outputs.build_number }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, subprocess, sys
+          app = json.load(open("prismgram/app.json"))
+          channel = app.get("channel", "@prismgram_ios")
+          lines = ["<b>PrismGram {} ({})</b>".format(app["version"], os.environ["BUILD_NUMBER"])]
+          changelog = app.get("changelog") or []
+          if changelog:
+              lines.append("")
+              lines.append("Что нового:")
+              lines += ["• " + item for item in changelog]
+          lines.append("")
+          lines.append("Установка: подпишите IPA через Feather / ESign / Sideloadly.")
+          caption = "\n".join(lines)[:1024]
+          url = "http://127.0.0.1:8081/bot{}/sendDocument".format(os.environ["BOT_TOKEN"])
+          result = subprocess.run([
+              "curl", "-s", url,
+              "-F", "chat_id=" + channel,
+              "-F", "parse_mode=HTML",
+              "-F", "caption=" + caption,
+              "-F", "document=@out/PrismGram.ipa",
+          ], capture_output=True, text=True)
+          answer = json.loads(result.stdout or "{}")
+          if not answer.get("ok"):
+              print("Telegram error:", result.stdout, result.stderr)
+              sys.exit(1)
+          print("Posted to", channel)
+          EOF
+
