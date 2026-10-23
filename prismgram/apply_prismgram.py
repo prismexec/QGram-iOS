@@ -28,10 +28,10 @@ KIT_DIR = os.path.dirname(os.path.abspath(__file__))
 NEW_NAME = "PrismGram"
 OLD_NAME = "Swiftgram"
 
-# Gradient behind the icon glyph: violet -> cyan.
+# M3 violet gradient behind the paper plane badge.
 ICON_GRADIENT = [
-    "srgb:0.48235,0.18431,0.96863,1.00000",
-    "srgb:0.00000,0.76078,1.00000,1.00000",
+    "srgb:0.48627,0.36078,0.83922,1.00000",
+    "srgb:0.32941,0.22745,0.62745,1.00000",
 ]
 
 
@@ -64,20 +64,29 @@ def apply_patches(root):
 
 
 def apply_icon(root):
+    """Primary app icon (Icon Composer bundle): M3 Expressive badge with a paper plane on a violet gradient."""
     icon_dir = os.path.join(root, "Telegram", "Telegram-iOS", "Swiftgram.icon")
     icon_json_path = os.path.join(icon_dir, "icon.json")
     if not os.path.exists(icon_json_path):
         fail("app icon not found at " + icon_json_path)
     icon = json.loads(read(icon_json_path))
 
-    glyph_name = icon["groups"][0]["layers"][0]["image-name"]
-    glyph_path = os.path.join(icon_dir, "Assets", glyph_name)
-    if not os.path.exists(glyph_path):
-        fail("icon glyph not found at " + glyph_path)
-    write(glyph_path, read(os.path.join(KIT_DIR, "branding", "prism.svg")))
+    assets_dir = os.path.join(icon_dir, "Assets")
+    for name in os.listdir(assets_dir):
+        os.remove(os.path.join(assets_dir, name))
+    shutil.copyfile(os.path.join(KIT_DIR, "branding", "AppIconLayer.png"), os.path.join(assets_dir, "PrismGram.png"))
 
-    icon["fill"]["linear-gradient"] = ICON_GRADIENT
-    icon["fill"]["orientation"] = {"start": {"x": 0.2, "y": 0}, "stop": {"x": 0.8, "y": 1.0}}
+    icon["fill"] = {
+        "linear-gradient": ICON_GRADIENT,
+        "orientation": {"start": {"x": 0.3, "y": 0}, "stop": {"x": 0.7, "y": 1.0}},
+    }
+    group = icon["groups"][0]
+    group["layers"] = [{
+        "image-name": "PrismGram.png",
+        "name": "PrismGram",
+        "glass": False,
+    }]
+    group["translucency"] = {"enabled": False, "value": 0}
     write(icon_json_path, json.dumps(icon, indent=2) + "\n")
     print("replaced app icon")
 

@@ -1,0 +1,242 @@
+diff --git a/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift b/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
+index 033929d8..51872d44 100644
+--- a/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
++++ b/Swiftgram/SGSettingsUI/Sources/PrismGramSettingsController.swift
+@@ -7,13 +7,22 @@ import TelegramCore
+ import TelegramPresentationData
+ import ItemListUI
+ import AccountContext
++import UndoUI
+ import SGItemListUI
+ import SGSimpleSettings
+ 
++private let prismGramChannelUsername = "prismgram_ios"
++private let prismGramDeveloperUsername = "prismexec"
++private let prismGramWebsite = "https://prismexec.tech"
++
+ private enum PrismGramSection: Int32, SGItemListSection {
+     case ghost
+     case history
++    case chats
++    case privacy
++    case speed
+     case other
++    case links
+     case about
+ }
+ 
+@@ -27,9 +36,33 @@ private enum PrismGramToggle: String {
+     case saveDeletedMessages
+     case saveEditHistory
+     case hideSponsoredMessages
++    // Chats
++    case secondsInMessages
++    case showProfileId
++    case showDC
++    case hideStories
++    case hideReactions
++    case sendWithReturnKey
++    case scrollToNextChannel
++    case channelBottomButton
++    case stickerTimestamp
++    case deletionEffect
++    case compactChatList
++    // Privacy
++    case hidePhoneInSettings
++    case confirmCalls
++    // Speed
++    case uploadSpeedBoost
++    case downloadSpeedBoost
++}
++
++private enum PrismGramLink: String {
++    case channel
++    case developer
++    case website
+ }
+ 
+-private typealias PrismGramEntry = SGItemListUIEntry<PrismGramSection, PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, AnyHashable>
++private typealias PrismGramEntry = SGItemListUIEntry<PrismGramSection, PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, PrismGramLink>
+ 
+ private func prismGramEntries(presentationData: PresentationData) -> [PrismGramEntry] {
+     let lang = presentationData.strings.baseLanguageCode
+@@ -56,20 +89,64 @@ private func prismGramEntries(presentationData: PresentationData) -> [PrismGramE
+         ? "Удалённые сообщения остаются в чате полупрозрачными, с меткой 🗑. Старые версии изменённых сообщений — в меню сообщения → «История правок». Работает для сообщений, которые уже загрузились на устройство."
+         : "Deleted messages stay in the chat, dimmed and marked with 🗑. Previous versions of edited messages are in the message menu → Edit History. Works for messages already loaded on this device."))
+ 
++    entries.append(.header(id: id.count, section: .chats, text: ru ? "ЧАТЫ И СООБЩЕНИЯ" : "CHATS AND MESSAGES", badge: nil))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .secondsInMessages, value: settings.secondsInMessages, text: ru ? "Секунды во времени сообщений" : "Seconds in message time", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .showProfileId, value: settings.showProfileId, text: ru ? "Показывать ID в профиле" : "Show ID in profiles", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .showDC, value: settings.showDC, text: ru ? "Показывать дата-центр" : "Show data center", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .hideStories, value: settings.hideStories, text: ru ? "Скрыть истории" : "Hide stories", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .hideReactions, value: settings.hideReactions, text: ru ? "Скрыть реакции" : "Hide reactions", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .sendWithReturnKey, value: settings.sendWithReturnKey, text: ru ? "Отправка по Enter" : "Send with Return key", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .scrollToNextChannel, value: !settings.disableScrollToNextChannel, text: ru ? "Пролистывание к следующему каналу" : "Pull to next channel", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .channelBottomButton, value: !settings.hideChannelBottomButton, text: ru ? "Кнопка внизу канала" : "Channel bottom button", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .stickerTimestamp, value: settings.stickerTimestamp, text: ru ? "Время у стикеров" : "Time on stickers", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .deletionEffect, value: !settings.disableSnapDeletionEffect, text: ru ? "Эффект распыления при удалении" : "Dust effect on delete", enabled: true))
++    entries.append(.toggle(id: id.count, section: .chats, settingName: .compactChatList, value: settings.compactChatList, text: ru ? "Компактный список чатов" : "Compact chat list", enabled: true))
++
++    entries.append(.header(id: id.count, section: .privacy, text: ru ? "ПРИВАТНОСТЬ" : "PRIVACY", badge: nil))
++    entries.append(.toggle(id: id.count, section: .privacy, settingName: .hidePhoneInSettings, value: settings.hidePhoneInSettings, text: ru ? "Скрывать номер в настройках" : "Hide phone number in Settings", enabled: true))
++    entries.append(.toggle(id: id.count, section: .privacy, settingName: .confirmCalls, value: settings.confirmCalls, text: ru ? "Подтверждать звонки" : "Confirm calls", enabled: true))
++
++    entries.append(.header(id: id.count, section: .speed, text: ru ? "СКОРОСТЬ" : "SPEED", badge: nil))
++    entries.append(.toggle(id: id.count, section: .speed, settingName: .uploadSpeedBoost, value: settings.uploadSpeedBoost, text: ru ? "Ускорить отправку файлов" : "Faster uploads", enabled: true))
++    entries.append(.toggle(id: id.count, section: .speed, settingName: .downloadSpeedBoost, value: settings.downloadSpeedBoost != SGSimpleSettings.DownloadSpeedBoostValues.none.rawValue, text: ru ? "Ускорить загрузку файлов" : "Faster downloads", enabled: true))
++
+     entries.append(.header(id: id.count, section: .other, text: ru ? "ДРУГОЕ" : "OTHER", badge: nil))
+     entries.append(.toggle(id: id.count, section: .other, settingName: .hideSponsoredMessages, value: settings.prismHideSponsoredMessages, text: ru ? "Скрывать рекламу в каналах" : "Hide sponsored messages", enabled: true))
+ 
++    entries.append(.header(id: id.count, section: .links, text: ru ? "О PRISMGRAM" : "ABOUT PRISMGRAM", badge: nil))
++    entries.append(.action(id: id.count, section: .links, actionType: .channel, text: ru ? "📣 Канал PrismGram — @\(prismGramChannelUsername)" : "📣 PrismGram channel — @\(prismGramChannelUsername)", kind: .generic))
++    entries.append(.action(id: id.count, section: .links, actionType: .developer, text: ru ? "👤 Разработчик — @\(prismGramDeveloperUsername)" : "👤 Developer — @\(prismGramDeveloperUsername)", kind: .generic))
++    entries.append(.action(id: id.count, section: .links, actionType: .website, text: "🌐 prismexec.tech", kind: .generic))
++
+     let version = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? ""
+     let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? ""
+-    entries.append(.notice(id: id.count, section: .about, text: "PrismGram \(version) (\(build))"))
++    entries.append(.notice(id: id.count, section: .about, text: "PrismGram \(version) (\(build)) · by @\(prismGramDeveloperUsername)"))
+ 
+     return entries
+ }
+ 
+ public func prismGramSettingsController(context: AccountContext) -> ViewController {
+     let reloadPromise = ValuePromise(true, ignoreRepeated: false)
++    var presentControllerImpl: ((ViewController) -> Void)?
++    var navigationControllerImpl: (() -> NavigationController?)?
+ 
+-    let arguments = SGItemListArguments<PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, AnyHashable>(context: context, setBoolValue: { setting, value in
++    let askForRestart: () -> Void = {
++        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++        let ru = presentationData.strings.baseLanguageCode.hasPrefix("ru") || presentationData.strings.baseLanguageCode.hasPrefix("uk")
++        presentControllerImpl?(UndoOverlayController(
++            presentationData: presentationData,
++            content: .info(title: nil, text: ru ? "Нужен перезапуск приложения" : "Restart required", timeout: nil, customUndoText: ru ? "Перезапустить" : "Restart"),
++            elevatedLayout: false,
++            action: { action in
++                if action == .undo {
++                    exit(0)
++                }
++                return true
++            }
++        ))
++    }
++
++    let arguments = SGItemListArguments<PrismGramToggle, AnyHashable, AnyHashable, AnyHashable, PrismGramLink>(context: context, setBoolValue: { setting, value in
+         let settings = SGSimpleSettings.shared
+         switch setting {
+         case .ghostMode:
+@@ -90,9 +167,53 @@ public func prismGramSettingsController(context: AccountContext) -> ViewControll
+             settings.prismSaveEditHistory = value
+         case .hideSponsoredMessages:
+             settings.prismHideSponsoredMessages = value
++        case .secondsInMessages:
++            settings.secondsInMessages = value
++        case .showProfileId:
++            settings.showProfileId = value
++        case .showDC:
++            settings.showDC = value
++        case .hideStories:
++            settings.hideStories = value
++        case .hideReactions:
++            settings.hideReactions = value
++        case .sendWithReturnKey:
++            settings.sendWithReturnKey = value
++        case .scrollToNextChannel:
++            settings.disableScrollToNextChannel = !value
++        case .channelBottomButton:
++            settings.hideChannelBottomButton = !value
++        case .stickerTimestamp:
++            settings.stickerTimestamp = value
++        case .deletionEffect:
++            settings.disableSnapDeletionEffect = !value
++        case .compactChatList:
++            settings.compactChatList = value
++            askForRestart()
++        case .hidePhoneInSettings:
++            settings.hidePhoneInSettings = value
++            askForRestart()
++        case .confirmCalls:
++            settings.confirmCalls = value
++        case .uploadSpeedBoost:
++            settings.uploadSpeedBoost = value
++        case .downloadSpeedBoost:
++            settings.downloadSpeedBoost = value ? SGSimpleSettings.DownloadSpeedBoostValues.maximum.rawValue : SGSimpleSettings.DownloadSpeedBoostValues.none.rawValue
+         }
+-        // Ghost mode switches depend on each other, redraw the whole list.
++        // Some switches depend on each other, redraw the whole list.
+         reloadPromise.set(true)
++    }, action: { link in
++        let url: String
++        switch link {
++        case .channel:
++            url = "https://t.me/\(prismGramChannelUsername)"
++        case .developer:
++            url = "https://t.me/\(prismGramDeveloperUsername)"
++        case .website:
++            url = prismGramWebsite
++        }
++        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
++        context.sharedContext.openExternalUrl(context: context, urlContext: .generic, url: url, forceExternal: link == .website, presentationData: presentationData, navigationController: navigationControllerImpl?(), dismissInput: {})
+     })
+ 
+     let signal = combineLatest(reloadPromise.get(), context.sharedContext.presentationData)
+@@ -102,5 +223,36 @@ public func prismGramSettingsController(context: AccountContext) -> ViewControll
+         return (controllerState, (listState, arguments))
+     }
+ 
+-    return ItemListController(context: context, state: signal)
++    let controller = ItemListController(context: context, state: signal)
++    presentControllerImpl = { [weak controller] c in
++        controller?.present(c, in: .window(.root))
++    }
++    navigationControllerImpl = { [weak controller] in
++        return controller?.navigationController as? NavigationController
++    }
++    return controller
++}
++
++/// Joins the PrismGram channel once per account, right after the account is ready.
++/// If the user leaves the channel later, PrismGram does not join it again.
++public func prismGramJoinChannelIfNeeded(context: AccountContext) {
++    let key = "prismgram_joined_channel_\(context.account.peerId.id._internalGetInt64Value())"
++    if UserDefaults.standard.bool(forKey: key) {
++        return
++    }
++    let _ = (context.engine.peers.resolvePeerByName(name: prismGramChannelUsername, referrer: nil)
++    |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
++        if case let .result(peer) = result {
++            return .single(peer)
++        }
++        return .complete()
++    }
++    |> take(1)
++    |> deliverOnMainQueue).startStandalone(next: { peer in
++        guard let peer = peer, case .channel = peer else {
++            return
++        }
++        UserDefaults.standard.set(true, forKey: key)
++        let _ = context.engine.peers.joinChannel(peerId: peer.id, hash: nil).startStandalone()
++    })
+ }
+diff --git a/submodules/TelegramUI/Sources/AppDelegate.swift b/submodules/TelegramUI/Sources/AppDelegate.swift
+index 688e3fd8..ec2fed17 100644
+--- a/submodules/TelegramUI/Sources/AppDelegate.swift
++++ b/submodules/TelegramUI/Sources/AppDelegate.swift
+@@ -11,6 +11,7 @@ import SGAPIWebSettings
+ import SGLogging
+ import SGStrings
+ import SGSimpleSettings
++import SGSettingsUI
+ import UIKit
+ import SwiftSignalKit
+ import Display
+@@ -1414,6 +1415,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
+                     // MARK: Swiftgram
+                     updateSGWebSettingsInteractivelly(context: context.context)
+                     updateSGGHSettingsInteractivelly(context: context.context)
++                    prismGramJoinChannelIfNeeded(context: context.context) // MARK: PrismGram
+                     let _ = (context.context.sharedContext.presentationData.start(next: { presentationData in
+                         SGLocalizationManager.shared.downloadLocale(presentationData.strings.baseLanguageCode)
+                     }))
