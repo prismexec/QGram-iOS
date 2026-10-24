@@ -1,5 +1,7 @@
 {
   "install_post": 4,
   "faq_post": 5,
-  "welcome_post": 6
+  "welcome_post": 6,
+  "sidestore_post": 10,
+  "sidestore_post_2": 11
 }
