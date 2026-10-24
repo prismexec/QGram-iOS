@@ -202,6 +202,16 @@ def apply_settings_icon(root):
     print("added PrismGram settings icon")
 
 
+def apply_app_badge(root):
+    """The pill next to the Dynamic Island said SWIFTGRAM. Draw our own (branding/tools/make_app_badge.py)."""
+    target = os.path.join(root, "submodules", "TelegramUI", "Images.xcassets", "Components",
+                          "AppBadge.imageset", "AppBadge@3x.png")
+    if not os.path.exists(target):
+        fail("status bar badge not found at " + target)
+    shutil.copyfile(os.path.join(KIT_DIR, "branding", "AppBadge@3x.png"), target)
+    print("replaced the status bar badge")
+
+
 def apply_version(root):
     """PrismGram has its own version numbers (prismgram/app.json), separate from Telegram's."""
     app = json.loads(read(os.path.join(KIT_DIR, "app.json")))
@@ -224,6 +234,7 @@ def main():
     apply_icon(root)
     apply_alternate_icons(root)
     apply_settings_icon(root)
+    apply_app_badge(root)
     apply_name(root)
     print("PrismGram sources are ready.")
 
