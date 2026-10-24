@@ -13,7 +13,7 @@ DESCRIPTION = (
     "Разработчик: @prismexec · prismexec.tech"
 )
 
-INSTALL = """<b>📲 Как установить PrismGram</b>
+INSTALL_TEMPLATE = """<b>📲 Как установить PrismGram</b>
 
 PrismGram — это IPA-файл. Перед установкой его нужно подписать: это делают Feather, ESign, Sideloadly или AltStore.
 
@@ -28,7 +28,16 @@ PrismGram — это IPA-файл. Перед установкой его нуж
 Скачайте IPA (кнопка под постом) и установите через Sideloadly или AltStore с обычным Apple ID. С бесплатным Apple ID приложение работает 7 дней, потом его нужно переподписать.
 
 <b>Обновление</b>
-Ставьте новую версию поверх старой: переписки и вход сохранятся.""".format(source=SOURCE_URL)
+Ставьте новую версию поверх старой: переписки и вход сохранятся.{sidestore}"""
+
+
+def install_text(sidestore_link=None):
+    extra = ""
+    if sidestore_link:
+        extra = ('\n\n<b>Без компьютера каждые 7 дней</b>\n'
+                 'SideStore переподписывает приложение прямо на телефоне. '
+                 '<a href="{}">Подробная инструкция по SideStore</a>'.format(sidestore_link))
+    return INSTALL_TEMPLATE.format(source=SOURCE_URL, sidestore=extra)
 
 FAQ = """<b>❓ Частые вопросы</b>
 
@@ -66,3 +75,68 @@ def release_caption(version, build, changelog):
         lines += ["• " + item for item in changelog]
     lines += ["", "IPA — в следующем сообщении."]
     return "\n".join(lines)
+
+
+SIDESTORE_SITE = "https://sidestore.io"
+SIDESTORE_DOCS = "https://docs.sidestore.io"
+
+SIDESTORE_1 = """<b>🧩 SideStore: установка (часть 1 из 2)</b>
+
+SideStore — магазин приложений, который сам переподписывает PrismGram прямо на iPhone. Компьютер нужен один раз, а не каждые 7 дней. Это бесплатно: хватит обычного Apple ID.
+
+<b>Что понадобится</b>
+• iPhone с iOS 14 или новее, на iPhone должен стоять код-пароль
+• компьютер с Windows, macOS или Linux и кабель для iPhone
+• Apple ID. Лучше завести отдельный, не основной: его пароль вводится в SideStore
+
+<b>Шаг 1. Подготовьте компьютер</b>
+• Windows: установите iTunes с сайта Apple (не из Microsoft Store)
+• macOS: ничего ставить не нужно
+• Linux: установите usbmuxd
+Затем скачайте программу <b>iloader</b>: ссылка есть на сайте SideStore (кнопка под постом).
+
+<b>Шаг 2. Установите SideStore</b>
+1. Подключите iPhone кабелем, разблокируйте его и нажмите «Доверять этому компьютеру».
+2. Откройте iloader и войдите в Apple ID.
+3. Выберите свой iPhone и нажмите <b>Install SideStore</b>. iloader установит SideStore и сразу добавит в него файл сопряжения (pairing file). Без этого файла SideStore работать не будет.
+
+<b>Шаг 3. Разрешите SideStore на iPhone</b>
+1. Настройки → Основные → VPN и управление устройством → ваш Apple ID → <b>Доверять</b>.
+2. Настройки → Конфиденциальность и безопасность → <b>Режим разработчика</b> → включить. iPhone перезагрузится, после этого подтвердите «Включить».
+
+<b>Шаг 4. Поставьте VPN для SideStore</b>
+Установите из App Store <b>LocalDevVPN</b> и включите в нём VPN. Это не настоящий VPN: трафик никуда не уходит. Он нужен, чтобы SideStore мог подписывать приложения прямо на телефоне. Включайте его перед каждой установкой и обновлением.
+
+<b>Шаг 5.</b> Откройте SideStore и войдите в тот же Apple ID.
+
+Как поставить PrismGram — в следующем посте 👇"""
+
+SIDESTORE_2 = """<b>🧩 SideStore: установка PrismGram (часть 2 из 2)</b>
+
+Перед установкой включите <b>LocalDevVPN</b>.
+
+<b>Способ 1. Через источник — обновления появятся сами</b>
+1. SideStore → вкладка <b>Sources</b> → <b>+</b>.
+2. Вставьте ссылку (нажмите на неё, чтобы скопировать):
+<code>{source}</code>
+3. Откройте источник PrismGram и нажмите кнопку установки.
+
+<b>Способ 2. Через файл</b>
+1. Скачайте IPA из закреплённого сообщения в канале (или кнопкой под постом) и сохраните в «Файлы».
+2. SideStore → <b>My Apps</b> → <b>+</b> вверху → выберите PrismGram.ipa.
+
+<b>Если SideStore спросит про расширения</b>
+Выберите <b>Remove App Extensions</b> (удалить расширения). С бесплатным Apple ID можно держать не больше 3 приложений, и расширения тоже считаются. На чаты это не влияет: виджеты и «Поделиться» при переподписи всё равно не работают.
+
+<b>Каждые 7 дней</b>
+Подпись бесплатного Apple ID действует 7 дней. Включите LocalDevVPN → SideStore → <b>My Apps</b> → <b>Refresh All</b>. Компьютер не нужен. Удобнее обновлять заранее, раз в 3–4 дня.
+
+<b>Если что-то не работает</b>
+• Ошибка подключения: не включён LocalDevVPN.
+• Ошибка pairing file: подключите iPhone к компьютеру и в iloader заново установите файл сопряжения.
+• «Maximum number of apps»: занято 3 приложения. Удалите лишнее, подписанное этим Apple ID.
+• «Maximum App IDs»: можно не больше 10 новых App ID за 7 дней. Подождите или используйте другой Apple ID.
+• PrismGram не открывается: прошли 7 дней. Сделайте Refresh All.
+
+Переписки и вход при обновлении и переподписи сохраняются.
+Вопросы: {dev}""".format(source=SOURCE_URL, dev=DEVELOPER)

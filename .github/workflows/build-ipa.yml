@@ -13,7 +13,7 @@ on:
         required: false
         default: ""
       channel_setup:
-        description: "Only set up the Telegram channel: all, profile (avatar + description) or posts"
+        description: "Only set up the Telegram channel: all, profile, posts, sidestore or pin-ipa=MESSAGE_ID"
         required: false
         default: ""
   push:

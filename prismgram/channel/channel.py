@@ -5,8 +5,12 @@ Posts to the @prismgram_ios channel through a Telegram bot (BOT_TOKEN env).
     channel.py setup [all|profile|posts]
         Sets the avatar and description, then posts "How to install", "FAQ"
         and the pinned welcome post. Prints the new message ids.
+    channel.py setup sidestore
+        Posts the SideStore guide and links it from the install and welcome posts.
+    channel.py setup pin-ipa=MESSAGE_ID
+        Pins that IPA message and unpins the previous one.
     channel.py release BUILD IPA_PATH
-        Posts the update card with the changelog from prismgram/app.json, then the IPA.
+        Posts the update card with the changelog from prismgram/app.json, then the IPA, and pins the IPA.
 
 BOT_API (env) is the Bot API base URL, https://api.telegram.org by default.
 A local Bot API server is needed for files over 50 MB (the IPA).
@@ -97,7 +101,7 @@ def setup_posts():
     state = load_json(STATE_PATH, {})
     common = {"chat_id": CHANNEL, "parse_mode": "HTML", "disable_notification": "true"}
 
-    install = call("sendMessage", dict(common, text=posts.INSTALL,
+    install = call("sendMessage", dict(common, text=posts.install_text(post_link(state["sidestore_post"]) if state.get("sidestore_post") else None),
                                        link_preview_options={"is_disabled": True},
                                        reply_markup=buttons([("📥 Скачать IPA", posts.LATEST_IPA_URL)])))
     state["install_post"] = install["message_id"]
@@ -109,10 +113,8 @@ def setup_posts():
     state["faq_post"] = faq["message_id"]
     print("faq post:", post_link(state["faq_post"]))
 
-    welcome = call("sendPhoto", dict(common, caption=posts.WELCOME, reply_markup=buttons(
-        [("📥 Скачать IPA", posts.LATEST_IPA_URL), ("📲 Как установить", post_link(state["install_post"]))],
-        [("❓ Вопросы", post_link(state["faq_post"])), ("🌐 prismexec.tech", posts.SITE_URL)],
-    )), {"photo": render("hero", os.path.join(OUT, "hero.png"))})
+    welcome = call("sendPhoto", dict(common, caption=posts.WELCOME, reply_markup=welcome_buttons(state)),
+                   {"photo": render("hero", os.path.join(OUT, "hero.png"))})
     state["welcome_post"] = welcome["message_id"]
     print("welcome post:", post_link(state["welcome_post"]))
 
@@ -120,14 +122,68 @@ def setup_posts():
     call("pinChatMessage", {"chat_id": CHANNEL, "message_id": str(state["welcome_post"]), "disable_notification": "true"})
     print("welcome post pinned")
 
+    save_state(state)
+
+
+def save_state(state):
     with open(STATE_PATH, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
         f.write("\n")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as f:
-            f.write("Channel message ids:\n\n```json\n{}\n```\n".format(json.dumps(state, indent=2)))
+            f.write("Channel message ids (copy into prismgram/channel/state.json):\n\n```json\n{}\n```\n".format(json.dumps(state, indent=2)))
     print("STATE " + json.dumps(state))
+
+
+def welcome_buttons(state):
+    rows = [[("📥 Скачать IPA", posts.LATEST_IPA_URL), ("📲 Как установить", post_link(state.get("install_post")))]]
+    second = []
+    if state.get("sidestore_post"):
+        second.append(("🧩 SideStore", post_link(state["sidestore_post"])))
+    second.append(("❓ Вопросы", post_link(state.get("faq_post"))))
+    rows.append(second)
+    rows.append([("🌐 prismexec.tech", posts.SITE_URL)])
+    return buttons(*rows)
+
+
+def setup_sidestore():
+    """Posts the two-part SideStore guide and links it from the install and welcome posts."""
+    state = load_json(STATE_PATH, {})
+    common = {"chat_id": CHANNEL, "parse_mode": "HTML", "link_preview_options": {"is_disabled": True}}
+    first = call("sendMessage", dict(common, text=posts.SIDESTORE_1, reply_markup=buttons(
+        [("🌐 Сайт SideStore", posts.SIDESTORE_SITE), ("📖 Документация", posts.SIDESTORE_DOCS)])))
+    state["sidestore_post"] = first["message_id"]
+    print("sidestore part 1:", post_link(first["message_id"]))
+    second = call("sendMessage", dict(common, text=posts.SIDESTORE_2, disable_notification="true",
+                                      reply_markup=buttons([("📥 Скачать IPA", posts.LATEST_IPA_URL)])))
+    state["sidestore_post_2"] = second["message_id"]
+    print("sidestore part 2:", post_link(second["message_id"]))
+
+    if state.get("install_post"):
+        call("editMessageText", {
+            "chat_id": CHANNEL, "message_id": str(state["install_post"]), "parse_mode": "HTML",
+            "text": posts.install_text(post_link(state["sidestore_post"])),
+            "link_preview_options": {"is_disabled": True},
+            "reply_markup": buttons([("📥 Скачать IPA", posts.LATEST_IPA_URL), ("🧩 SideStore", post_link(state["sidestore_post"]))]),
+        })
+        print("install post links to SideStore")
+    if state.get("welcome_post"):
+        call("editMessageReplyMarkup", {"chat_id": CHANNEL, "message_id": str(state["welcome_post"]),
+                                        "reply_markup": welcome_buttons(state)})
+        print("welcome post has a SideStore button")
+    save_state(state)
+
+
+def pin_latest_ipa(message_id):
+    """Keeps exactly one IPA pinned (the newest) next to the pinned welcome post."""
+    pinned = call("getChat", {"chat_id": CHANNEL}).get("pinned_message") or {}
+    name = (pinned.get("document") or {}).get("file_name", "")
+    if name.endswith(".ipa") and pinned.get("message_id") != message_id:
+        call("unpinChatMessage", {"chat_id": CHANNEL, "message_id": str(pinned["message_id"])})
+        print("unpinned the previous IPA:", post_link(pinned["message_id"]))
+    call("pinChatMessage", {"chat_id": CHANNEL, "message_id": str(message_id), "disable_notification": "true"})
+    print("pinned the IPA:", post_link(message_id))
 
 
 def release(build, ipa_path):
@@ -152,6 +208,7 @@ def release(build, ipa_path):
         "disable_notification": "true",
     }, {"document": ipa_path})
     print("IPA:", post_link(document["message_id"]))
+    pin_latest_ipa(document["message_id"])
 
 
 def fail(message):
@@ -170,6 +227,10 @@ def main():
                 setup_profile()
             if what in ("all", "posts"):
                 setup_posts()
+            if what in ("all", "sidestore"):
+                setup_sidestore()
+            if what.startswith("pin-ipa="):
+                pin_latest_ipa(int(what.split("=", 1)[1]))
         elif args[:1] == ["release"] and len(args) == 3:
             release(args[1], args[2])
         else:
